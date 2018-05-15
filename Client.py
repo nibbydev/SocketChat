@@ -1,12 +1,10 @@
 import tkinter as tk
-from tkinter import Text
+from tkinter import Text, Button, Entry, Scrollbar
 from threading import Thread
 import socket
 
 
-HOST = 'localhost'
-PORT = 8888
-MAX_LENGTH = 2056
+MAX_MSG_LENGTH = 2056
 
 
 class MainWindow(tk.Frame):
@@ -16,39 +14,67 @@ class MainWindow(tk.Frame):
 
         self.__build_gui()
 
-        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connection.connect((HOST, PORT))
+        self.connection = None
+        self.receive_thread = None
 
-        self.receive_thread = Thread(target=self.__loop_receive, daemon=True)
-        self.receive_thread.start()
+        self.greeted = False
 
-        self.console.insert(self.console.index('end'), "Connected\nTop windows shows messages, bottom window "
-                                                       "sends messages.\nPress enter to send your message.\n")
+        self.log("Top windows shows messages, bottom window sends messages")
+        self.log("Press enter to send your message")
 
     def __build_gui(self):
         self.root.title("Text Chat")
         self.root.option_add('*tearOff', 'FALSE')
 
-        frame = tk.Frame(master=self.root)
-        frame.pack(fill=tk.BOTH, expand=True)
+        connection_frame = tk.Frame(master=self.root)
+        connection_frame.pack(side=tk.LEFT, padx=10, pady=10)
 
-        # Add text widget to display logging info
-        self.console = Text(frame, height=10)
-        self.console.pack()
+        base_frame = tk.Frame(master=self.root)
+        base_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Add text widget to display logging info
-        self.textbox = Text(frame, height=4)
-        self.textbox.pack()
+        text_frame = tk.Frame(master=base_frame)
+        text_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        tk.Label(connection_frame, text='IP and port of server').pack()
+        self.ip = Entry(connection_frame, width=20)
+        self.ip.insert(tk.END, "localhost:8888")
+        self.ip.pack()
+
+        Button(connection_frame, text='Connect', command=self.cmd_connect).pack(pady=5)
+        Button(connection_frame, text='Disconnect', command=self.cmd_disconnect).pack()
+
+        self.console = Text(text_frame, height=10)
+        self.console.pack(fill=tk.BOTH, expand=True)
+
+        scrollbar = Scrollbar(base_frame, command=self.console.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.console["yscrollcommand"] = scrollbar.set
+
+        self.textbox = Text(text_frame, height=3)
+        self.textbox.pack(fill=tk.BOTH, expand=True)
 
         self.textbox.bind("<Return>", self.cmd_send)
 
     def __loop_receive(self):
         try:
             while True:
-                msg = self.connection.recv(MAX_LENGTH).decode("utf-8")
-                self.console.insert(self.console.index('end'), msg + "\n")
+                msg = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+
+                if not self.greeted:
+                    self.greeted = True
+                    if msg == "welcome":
+                        self.log("Connected to server")
+                        continue
+                    elif msg == "full":
+                        self.log("Server is full")
+                        self.cmd_disconnect()
+                        return
+
+                self.log(msg)
         except ConnectionResetError:
-            self.console.insert(self.console.index('end'), "Server unexpectedly closed\n")
+            self.log("Server unexpectedly closed")
+        except ConnectionAbortedError:
+            self.log("Connection closed")
 
     def exit(self):
         self.connection.close()
@@ -60,9 +86,44 @@ class MainWindow(tk.Frame):
         msg = self.textbox.get("1.0", "end").strip()
         self.textbox.delete("1.0", "end")
 
-        self.console.insert(self.console.index('end'), "Me> " + msg + "\n")
+        if self.connection:
+            self.log("Me> " + msg)
+            self.connection.sendall(msg.encode("utf-8"))
+        else:
+            self.log("No active connections")
 
-        self.connection.sendall(msg.encode("utf-8"))
+    def cmd_connect(self):
+        if self.receive_thread is not None or self.connection is not None:
+            self.log("A connection is already active")
+            return
+
+        try:
+            ip = self.ip.get().split(":")[0]
+            port = int(self.ip.get().split(":")[1])
+        except (ValueError, IndexError):
+            self.log("Invalid IP")
+            return
+
+        self.greeted = False
+
+        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection.connect((ip, port))
+        self.receive_thread = Thread(target=self.__loop_receive, daemon=True)
+        self.receive_thread.start()
+
+    def cmd_disconnect(self):
+        if not self.receive_thread or not self.receive_thread.is_alive():
+            self.log("No active connections")
+            return
+
+        self.connection.close()
+
+        self.connection = None
+        self.receive_thread = None
+
+    def log(self, msg):
+        self.console.insert(self.console.index('end'), msg + "\n")
+        self.console.see(tk.END)
 
 
 def init():
