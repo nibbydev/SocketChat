@@ -1,6 +1,18 @@
 from threading import Thread
 import socket
 
+"""
+Headers:
+    'disconnect' - a client disconnected
+    'bye' - that client requested a disconnect
+    'message' - a text message
+    'welcome' - indicating a client it may join
+    'connected' - a new client joined
+    'couldn't connect' - server full or something, a client couldn't connect
+    'full' - indicating a client the server is full
+    'exit' - the clients MUST disconnect
+"""
+
 
 MAX_MSG_LENGTH = 2056
 
@@ -16,18 +28,24 @@ class Client:
     def __receive_loop(self):
         try:
             while True:
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-
-                if data == "exit":
-                    self.send_data("exit")
-                    break
-
-                print("Client {0} ({1}:{2}): '{3}'".format(self.client_id, self.address[0], self.address[1], data))
-                self.server.message_all_but_sender("Client {0}> {1}".format(self.client_id, data), self)
+                self._process_data(self.connection.recv(MAX_MSG_LENGTH))
         except ConnectionResetError:
             pass
         finally:
             self.stop()
+
+    def _process_data(self, data):
+        data = data.decode("utf-8").split("::")
+
+        header = data[0]
+        body = data[1]
+
+        if header == "bye":
+            self.send_data("bye", "")
+            return
+        elif header == "message":
+            print("Client {0} ({1}:{2}): '{3}'".format(self.client_id, self.address[0], self.address[1], body))
+            self.server.send_data_to_all(self, "message", "Client {0}> {1}".format(self.client_id, body))
 
     def start(self, client_id):
         self.client_id = client_id
@@ -42,15 +60,17 @@ class Client:
 
     def stop(self):
         msg = "Client {0} ({1}:{2}) disconnected".format(self.client_id, self.address[0], self.address[1])
-        self.server.message_all_but_sender(msg, self)
+        self.server.send_data_to_all(self, "disconnect", msg)
         print(msg)
 
         self.connection.close()
         self.server.clients.remove(self)
 
-    def send_data(self, data):
+    def send_data(self, header, body):
+        payload = header + "::" + body
+
         try:
-            self.connection.send(data.encode("utf-8"))
+            self.connection.send(payload.encode("utf-8"))
         except ConnectionResetError:
             pass
 
@@ -77,7 +97,7 @@ class Server:
             client.start(client_id)
 
             msg = "Client {0} ({1}:{2}) connected".format(client_id, address[0], address[1])
-            self.message_all_but_sender(msg, client)
+            self.send_data_to_all(client, "connected", msg)
             print(msg)
 
     def _check_server_full(self, client):
@@ -86,21 +106,17 @@ class Server:
             client.connection.detach()
 
             msg = "Client (" + client.address[0] + ":" + str(client.address[1]) + ") couldn't connect (server full)"
-            self.message_all(msg)
+            self.send_data_to_all(client, "couldn't connect", msg)
             print(msg)
             return True
         else:
-            client.send_data("welcome")
+            client.send_data("welcome", "")
             return False
 
-    def message_all(self, msg):
-        for client in self.clients:
-            client.send_data(msg)
-
-    def message_all_but_sender(self, msg, sender):
+    def send_data_to_all(self, sender, header, body):
         for client in self.clients:
             if client != sender:
-                client.send_data(msg)
+                client.send_data(header, body)
 
     def start(self):
         print("Starting server on '" + self.ip + "':'" + str(self.port) + "'")

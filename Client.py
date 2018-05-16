@@ -58,23 +58,27 @@ class MainWindow(tk.Frame):
     def __loop_receive(self):
         try:
             while True:
-                msg = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-
-                if not self.greeted:
-                    self.greeted = True
-                    if msg == "welcome":
-                        self.log("Connected to server")
-                        continue
-                    elif msg == "full":
-                        self.log("Server is full")
-                        self.cmd_disconnect()
-                        return
-
-                self.log(msg)
+                self._process_data(self.connection.recv(MAX_MSG_LENGTH))
         except ConnectionResetError:
             self.log("Server unexpectedly closed")
         except ConnectionAbortedError:
             self.log("Connection closed")
+
+    def _process_data(self, data):
+        data = data.decode("utf-8").split("::")
+
+        header = data[0]
+        body = data[1]
+
+        if header == "welcome":
+            self.log("Connected to server")
+            return
+        elif header == "full":
+            self.log("Server is full")
+            self.cmd_disconnect()
+            return
+        elif header == "message":
+            self.log(body)
 
     def exit(self):
         self.connection.close()
