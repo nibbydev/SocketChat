@@ -2,56 +2,51 @@ from threading import Thread
 import socket
 
 
-HOST = 'localhost'
-PORT = 8888
-MAX_CONNECTIONS = 5
-ACTIVE_CONNECTIONS = []
 MAX_MSG_LENGTH = 2056
 
 
 class Client:
-    def __init__(self, connection, address):
+    def __init__(self, server, connection, address):
+        self.server = server
         self.connection = connection
         self.address = address
-        self.id = len(ACTIVE_CONNECTIONS)
+        self.client_id = None
+        self.thread = None
 
-        self.thread = Thread(
-            target=self.main_loop,
-            name="connection-" + str(self.id),
-            daemon=True
-        )
-
-    def main_loop(self):
+    def __receive_loop(self):
         try:
             while True:
-                data = self.connection.recv(MAX_MSG_LENGTH)
-                msg = data.decode("utf-8")
+                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
 
-                print("Client "+str(self.id)+" ("+self.address[0]+":"+str(self.address[1])+"): '"+msg+"'")
-
-                for connection in ACTIVE_CONNECTIONS:
-                    if connection != self:
-                        connection.send_data("Client "+str(self.id)+"> "+msg)
-
-                if msg == "exit":
+                if data == "exit":
                     self.send_data("exit")
                     break
+
+                print("Client {0} ({1}:{2}): '{3}'".format(self.client_id, self.address[0], self.address[1], data))
+                self.server.message_all_but_sender("Client {0}> {1}".format(self.client_id, data), self)
         except ConnectionResetError:
             pass
         finally:
             self.stop()
 
-    def start(self):
+    def start(self, client_id):
+        self.client_id = client_id
+
+        self.thread = Thread(
+            target=self.__receive_loop,
+            name="client-" + str(self.client_id),
+            daemon=True
+        )
+
         self.thread.start()
 
     def stop(self):
-        reply = "Client "+str(self.id)+" ("+self.address[0]+":"+str(self.address[1])+") disconnected"
-        print(reply)
-        for connection in ACTIVE_CONNECTIONS:
-            connection.send_data(reply)
+        msg = "Client {0} ({1}:{2}) disconnected".format(self.client_id, self.address[0], self.address[1])
+        self.server.message_all_but_sender(msg, self)
+        print(msg)
 
         self.connection.close()
-        ACTIVE_CONNECTIONS.remove(self)
+        self.server.clients.remove(self)
 
     def send_data(self, data):
         try:
@@ -60,52 +55,80 @@ class Client:
             pass
 
 
-def init():
-    print("Binding socket on '"+HOST+"':'"+str(PORT)+"'")
+class Server:
+    def __init__(self, ip, port, max_clients):
+        self.ip = ip
+        self.port = port
+        self.max_clients = max_clients
+        self.clients = []
 
-    try:
-        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        connection.bind((HOST, PORT))
-    except socket.error:
-        return 1
+        self.connection = None
 
-    # Specifying max connections here doesn't really seem to work for some reason
-    connection.listen(MAX_CONNECTIONS)
-
-    print("Awaiting connections ("+str(MAX_CONNECTIONS)+" max)...")
-
-    try:
+    def __receive_loop(self):
         while True:
-            connection_data, address = connection.accept()
+            connection, address = self.connection.accept()
+            client = Client(self, connection, address)
 
-            if len(ACTIVE_CONNECTIONS) >= MAX_CONNECTIONS:
-                connection_data.send("full".encode("utf-8"))
-                connection_data.detach()
+            skip = self._check_server_full(client)
+            if skip: continue
 
-                reply = "Client (" + address[0]+":"+str(address[1])+") couldn't connect (server full)"
-                print(reply)
-                for conn in ACTIVE_CONNECTIONS:
-                    conn.send_data(reply)
+            self.clients.append(client)
+            client_id = self.clients.index(client)
+            client.start(client_id)
 
-                continue
-            else:
-                connection_data.send("welcome".encode("utf-8"))
+            msg = "Client {0} ({1}:{2}) connected".format(client_id, address[0], address[1])
+            self.message_all_but_sender(msg, client)
+            print(msg)
 
-            connection_object = Client(connection_data, address)
+    def _check_server_full(self, client):
+        if len(self.clients) >= self.max_clients:
+            client.send_data("full")
+            client.connection.detach()
 
-            reply = "Client "+str(len(ACTIVE_CONNECTIONS))+" ("+address[0]+":"+str(address[1])+") connected"
-            print(reply)
-            for conn in ACTIVE_CONNECTIONS:
-                conn.send_data(reply)
+            msg = "Client (" + client.address[0] + ":" + str(client.address[1]) + ") couldn't connect (server full)"
+            self.message_all(msg)
+            print(msg)
+            return True
+        else:
+            client.send_data("welcome")
+            return False
 
-            ACTIVE_CONNECTIONS.append(connection_object)
-            connection_object.start()
+    def message_all(self, msg):
+        for client in self.clients:
+            client.send_data(msg)
 
+    def message_all_but_sender(self, msg, sender):
+        for client in self.clients:
+            if client != sender:
+                client.send_data(msg)
+
+    def start(self):
+        print("Starting server on '" + self.ip + "':'" + str(self.port) + "'")
+
+        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection.bind((self.ip, self.port))
+
+        # Specifying max connections here doesn't really seem to work for some reason
+        self.connection.listen(self.max_clients)
+
+        print("Awaiting connections (" + str(self.max_clients) + " max)...")
+
+        self.__receive_loop()
+
+    def stop(self):
+        for client in self.clients:
+            client.send_data("exit")
+            client.stop()
+        self.connection.close()
+
+
+def init():
+    server = Server("localhost", 8888, 5)
+
+    try:
+        server.start()
     finally:
-        for conn in ACTIVE_CONNECTIONS:
-            conn.send_data("exit")
-            conn.stop()
-        connection.close()
+        server.stop()
 
 
 if __name__ == "__main__":
