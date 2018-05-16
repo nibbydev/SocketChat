@@ -9,7 +9,7 @@ ACTIVE_CONNECTIONS = []
 MAX_MSG_LENGTH = 2056
 
 
-class Connection(object):
+class Client:
     def __init__(self, connection, address):
         self.connection = connection
         self.address = address
@@ -91,7 +91,7 @@ def init():
             else:
                 connection_data.send("welcome".encode("utf-8"))
 
-            connection_object = Connection(connection_data, address)
+            connection_object = Client(connection_data, address)
 
             reply = "Client "+str(len(ACTIVE_CONNECTIONS))+" ("+address[0]+":"+str(address[1])+") connected"
             print(reply)
