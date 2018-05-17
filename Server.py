@@ -46,10 +46,11 @@ class Database:
 
         if row is None or "users" not in row:
             self.__create_table_users()
-            self.__create_table_channels()
-
             self.connection.commit()
-            print("Created base db structure")
+
+        if row is None or "channels" not in row:
+            self.__create_table_channels()
+            self.connection.commit()
 
     def __create_table_users(self):
         asd = "CREATE TABLE users (date TEXT, username TEXT, nick TEXT, password TEXT, rank INT, mute INT, ban INT)"
@@ -62,15 +63,16 @@ class Database:
         self.c.executemany("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
 
     def __create_table_channels(self):
-        self.c.execute("CREATE TABLE channels (name TEXT, password TEXT, rank INT)")
+        self.c.execute("CREATE TABLE channels (name TEXT, max INT, rank INT)")
 
         # Add default channels
         data = [
-            ("general", "", 99),
-            ("off-topic", "", 99),
-            ("music", "", 99),
-            ("admin", "123", 0)
+            ("general", 64, 99),
+            ("off-topic", 64, 99),
+            ("music", 64, 99),
+            ("admin", 64, 10)
         ]
+
         self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
 
     # ======================================================================================================
@@ -98,6 +100,23 @@ class Database:
 
         return True
 
+    # ======================================================================================================
+    # Channel management
+    # ======================================================================================================
+
+    def list_channels(self):
+        rows = self.c.execute("SELECT * FROM channels")
+        return rows.fetchall()
+
+
+class Channel:
+    def __init__(self, channel_data):
+        self.name = channel_data[0]
+        self.max = int(channel_data[1])
+        self.rank = int(channel_data[2])
+
+        self.clients = []
+
 
 class Client:
     def __init__(self, server, connection, address):
@@ -109,6 +128,7 @@ class Client:
 
         self.logged_in = False
 
+        self.channel = None
         self.username = None
         self.nick = None
         self.rank = None
@@ -125,15 +145,18 @@ class Client:
             while True:
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8").split(" ", 1)
 
-                self._sort_data(data[0], data[1])
+                self.__parse_data(data[0], data[1])
         except ConnectionResetError:
             pass
         finally:
             self.stop()
 
-    def _sort_data(self, cmd, content):
+    def __parse_data(self, cmd, content):
         if not self.logged_in:
-            self._process_login(cmd, content)
+            if cmd == "!login":
+                self.__login(content)
+            elif cmd == "!register":
+                self.__register(content)
             return
 
         if cmd == "!msg":
@@ -144,53 +167,61 @@ class Client:
                 self.address[1],
                 content
             ))
+            self.server.send_msg_from_client_to_all_in_channel(self, content)
         elif cmd == "!kick":
             print("Not implemented")
 
-    def _process_login(self, cmd, content):
-        if cmd == "!login":
-            try:
-                username = content.split(" ")[0]
-                password = content.split(" ")[1]
-            except IndexError:
-                self.send_data("!error", "invalid info provided")
-                self.logged_in = False
-                return
+    def __login(self, content):
+        try:
+            username = content.split(" ")[0]
+            password = content.split(" ")[1]
+        except IndexError:
+            self.send_data("!error", "invalid info provided")
+            self.logged_in = False
+            return
 
-            user_data = self.server.database.check_login(username, password)
+        user_data = self.server.database.check_login(username, password)
 
-            if user_data is None:
-                self.send_data("!error", "invalid username or password")
-                self.logged_in = False
-                return
-            elif user_data[6] is 1:
-                self.send_data("!error", "you are banned")
-                self.logged_in = False
-                return
+        if user_data is None:
+            self.send_data("!error", "invalid username or password")
+            self.logged_in = False
+            return
+        elif user_data[6] is 1:
+            self.send_data("!error", "you are banned")
+            self.logged_in = False
+            return
 
-            self.send_data("!success", "logged in successfully")
-            self.logged_in = True
+        self.send_data("!success", "logged in successfully")
+        self.logged_in = True
 
-            self.username = user_data[1]
-            self.nick = user_data[2]
-            self.rank = user_data[4]
-            self.mute = user_data[5]
+        self.username = user_data[1]
+        self.nick = user_data[2]
+        self.rank = user_data[4]
+        self.mute = user_data[5]
 
-        elif cmd == "!register":
-            try:
-                username = content.split(" ")[0]
-                password = content.split(" ")[1]
-            except IndexError:
-                self.send_data("!error", "invalid info provided")
-                self.logged_in = False
-                return
+    def __register(self, content):
+        try:
+            username = content.split(" ")[0]
+            password = content.split(" ")[1]
+        except IndexError:
+            self.send_data("!error", "invalid info provided")
+            return
 
-            self.logged_in = self.server.database.create_user(username, password)
+        if not self.server.database.create_user(username, password):
+            self.send_data("!error", "username already in use")
+            return
 
-            if self.logged_in:
-                self.send_data("!success", "account created successfully")
-            else:
-                self.send_data("!error", "username already in use")
+        self.send_data("!success", "account created and logged in")
+        self.logged_in = True
+
+        self.username = username
+        self.nick = username
+        self.rank = 99
+        self.mute = 0
+
+    def __join_default_channel(self):
+        self.channel = self.server.channels["general"]
+        self.channel.clients.append(self)
 
     # ======================================================================================================
     # Send data
@@ -238,6 +269,7 @@ class Server:
         self.port = port
         self.max_clients = max_clients
         self.clients = []
+        self.channels = {}
 
         self.database = database
         self.connection = None
@@ -261,14 +293,25 @@ class Server:
 
     def send_data_to_all(self, sender, cmd, content):
         for client in self.clients:
-            if client != sender:
+            if client != sender and client.channel == sender.channel:
                 client.send_data(cmd, content)
+
+    def send_msg_from_client_to_all_in_channel(self, sender, content):
+        for client in self.channels[sender.channel.name].clients:
+            if client != sender:
+                client.send_data("!msg", content)
 
     # ======================================================================================================
     # Control functions
     # ======================================================================================================
 
+    def __load_channels(self):
+        for channel_data in self.database.list_channels():
+            self.channels[channel_data[0]] = Channel(channel_data)
+
     def run(self):
+        self.__load_channels()
+
         print("Starting server on '" + self.ip + "':'" + str(self.port) + "'")
 
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
