@@ -20,7 +20,7 @@ class Client:
     # User commands
     # ======================================================================================================
 
-    def _connect(self, data):
+    def __connect(self, data):
         ip = data.split(" ")[1]
         port = int(data.split(" ")[2])
 
@@ -56,25 +56,28 @@ class Client:
                 print("[RAW]", data)
 
                 data = data.split(" ", 1)
-                self._sort_data(data[0], data[1])
+                self.__parse_received_data(data[0], data[1])
 
         except ConnectionResetError:
             print("Server unexpectedly closed")
         except ConnectionAbortedError:
             print("Connection closed")
 
-    def _sort_data(self, cmd, content):
+    def __parse_received_data(self, cmd, content):
         if not self.is_logged_in:
-            self._process_login(cmd, content)
+            self.__process_login(cmd, content)
             return
 
         if cmd == "!msg":
             print(content)
+        elif cmd == "!channels":
+            self.__parse_channels(content)
 
-    def _process_login(self, cmd, content):
+    def __process_login(self, cmd, content):
         if cmd == "!login":
             print("[LOGIN]", content)
-
+            # TODO: remove
+            self.send_manual("!login 2 2")
         elif cmd == "!error":
             print("[ERROR]", content)
             return
@@ -82,6 +85,20 @@ class Client:
             print("[SUCC]", content)
             self.is_logged_in = True
             return
+
+    def __parse_channels(self, data):
+        channels = data.split(",")
+        print("Channels in the server:")
+
+        for channel_data in channels:
+            split_channel_data = channel_data.split(":")
+
+            print("    '{:12}' {:>3}/{:<3} slots (accessible to rank <= {:2})".format(
+                split_channel_data[0],
+                split_channel_data[1],
+                split_channel_data[2],
+                split_channel_data[3]
+            ))
 
     # ======================================================================================================
     # Send data
@@ -98,14 +115,17 @@ class Client:
     # ======================================================================================================
 
     def run(self):
+        # TODO: remove
+        self.__parse_local_command("!connect localhost 8888")
+
         try:
             while True:
                 data = input()
-                self._parse_command(data)
+                self.__parse_local_command(data)
         except KeyboardInterrupt:
             self.disconnect()
 
-    def _parse_command(self, data):
+    def __parse_local_command(self, data):
         if self.is_connected:
             if data.startswith("!disconnect"):
                 self.disconnect()
@@ -116,14 +136,18 @@ class Client:
                     self.send_manual(data)
                 else:
                     self.send_manual("!msg " + data)
+                    print("!msg " + data)
+                    print("!msg " + data)
             else:
                 if data.startswith("!login"):
                     self.send_manual(data)
                 elif data.startswith("!register"):
                     self.send_manual(data)
+                else:
+                    print("[ERROR] Unknown command:", data)
         else:
             if data.startswith("!connect"):
-                self._connect(data)
+                self.__connect(data)
 
 
 def init():

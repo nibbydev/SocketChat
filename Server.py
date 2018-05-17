@@ -124,6 +124,14 @@ class Channel:
 
         self.clients = []
 
+    def to_csv(self):
+        return "{0}:{1}:{2}:{3}".format(
+            self.name,
+            len(self.clients),
+            self.max,
+            self.rank
+        )
+
 
 class Client:
     def __init__(self, server, connection, address):
@@ -170,8 +178,7 @@ class Client:
             return
 
         if cmd == "!msg":
-            print("[{0}] {1} ({2}:{3}): '{4}'".format(
-                self.client_id,
+            print("[MSG] '{0}' ({1}:{2}): '{3}'".format(
                 self.username,
                 self.address[0],
                 self.address[1],
@@ -180,6 +187,9 @@ class Client:
             self.server.send_msg_from_client_to_all_in_channel(self, content)
         elif cmd == "!channels":
             self.__cmd_channels()
+
+        if cmd != "!msg":
+            print("[RAW] '{0}' sent command '{1}' with data '{2}'".format(self.username, cmd, content))
 
     def __login(self, content):
         try:
@@ -208,6 +218,15 @@ class Client:
         self.nick = user_data[2]
         self.rank = user_data[4]
         self.mute = user_data[5]
+
+        self.__join_default_channel()
+
+        print("[LOGIN] '{0}' just logged in as client {1} from '{2}:{3}'".format(
+            self.username,
+            self.client_id,
+            self.address[0],
+            self.address[1]
+        ))
 
     def __register(self, content):
         try:
@@ -238,10 +257,10 @@ class Client:
 
         for name, channel in self.server.channels.items():
             if channel.rank >= self.rank:
-                reply += channel.name + ", "
+                reply += channel.to_csv() + ","
 
-        if reply.endswith(", "):
-            reply = reply[:len(reply) - 2]
+        if reply.endswith(","):
+            reply = reply[:len(reply) - 1]
 
         self.send_data("!channels", reply)
 
@@ -273,9 +292,12 @@ class Client:
         self.thread.start()
 
     def stop(self):
-        msg = "Client {0} ({1}:{2}) disconnected".format(self.client_id, self.address[0], self.address[1])
-        self.server.send_data_to_all(self, "!disconnect", msg)
-        print(msg)
+        print("[DISCONNECT] '{0}' disconnected as client {1} from '{2}:{3}'".format(
+            self.username,
+            self.client_id,
+            self.address[0],
+            self.address[1]
+        ))
 
         self.connection.close()
         self.server.clients.remove(self)
@@ -319,8 +341,6 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
-        print("SENDER CHANNEL:", sender.channel)
-        print("SENDER CHANNEL NAME:", sender.channel.name)
         for client in self.channels[sender.channel.name].clients:
             if client != sender:
                 client.send_data("!msg", content)
