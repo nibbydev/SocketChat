@@ -42,15 +42,18 @@ class Database:
     # ======================================================================================================
 
     def __verify_database(self):
-        row = self.c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+        data = self.c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
 
-        if row is None or "users" not in row:
+        if data is None:
             self.__create_table_users()
-            self.connection.commit()
-
-        if row is None or "channels" not in row:
             self.__create_table_channels()
-            self.connection.commit()
+        else:
+            if ("users",) not in data:
+                self.__create_table_users()
+            if ("channels",) not in data:
+                self.__create_table_channels()
+
+        self.connection.commit()
 
     def __create_table_users(self):
         asd = "CREATE TABLE users (date TEXT, username TEXT, nick TEXT, password TEXT, rank INT, mute INT, ban INT)"
@@ -58,7 +61,10 @@ class Database:
 
         data = [
             ("-", "root", "root", "123", 0, 0, 0),
-            ("-", "1", "1", "Password", 99, 0, 0)
+            ("-", "1", "1", "1", 99, 0, 0),
+            ("-", "2", "2", "2", 80, 0, 0),
+            ("-", "3", "3", "3", 99, 1, 0),
+            ("-", "4", "4", "4", 99, 1, 1)
         ]
         self.c.executemany("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
 
@@ -67,10 +73,11 @@ class Database:
 
         # Add default channels
         data = [
-            ("general", 64, 99),
-            ("off-topic", 64, 99),
-            ("music", 64, 99),
-            ("admin", 64, 10)
+            ("default", 512, 99),
+            ("off-topic", 128, 90),
+            ("music", 128, 20),
+            ("code club", 64, 20),
+            ("admin", 16, 10)
         ]
 
         self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
@@ -143,15 +150,18 @@ class Client:
 
         try:
             while True:
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8").split(" ", 1)
-
-                self.__parse_data(data[0], data[1])
+                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+                self.__parse_data(data)
         except ConnectionResetError:
             pass
         finally:
             self.stop()
 
-    def __parse_data(self, cmd, content):
+    def __parse_data(self, data):
+        split_data = data.split(" ", 1)
+        cmd = split_data[0]
+        content = split_data[1] if len(split_data) > 1 else ""
+
         if not self.logged_in:
             if cmd == "!login":
                 self.__login(content)
@@ -168,8 +178,8 @@ class Client:
                 content
             ))
             self.server.send_msg_from_client_to_all_in_channel(self, content)
-        elif cmd == "!kick":
-            print("Not implemented")
+        elif cmd == "!channels":
+            self.__cmd_channels()
 
     def __login(self, content):
         try:
@@ -220,8 +230,20 @@ class Client:
         self.mute = 0
 
     def __join_default_channel(self):
-        self.channel = self.server.channels["general"]
+        self.channel = self.server.channels["default"]
         self.channel.clients.append(self)
+
+    def __cmd_channels(self):
+        reply = ""
+
+        for name, channel in self.server.channels.items():
+            if channel.rank >= self.rank:
+                reply += channel.name + ", "
+
+        if reply.endswith(", "):
+            reply = reply[:len(reply) - 2]
+
+        self.send_data("!channels", reply)
 
     # ======================================================================================================
     # Send data
@@ -278,7 +300,7 @@ class Server:
     # Receive and process clients
     # ======================================================================================================
 
-    def __receive_loop(self):
+    def __loop_receive(self):
         while True:
             connection, address = self.connection.accept()
             client = Client(self, connection, address)
@@ -297,6 +319,8 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
+        print("SENDER CHANNEL:", sender.channel)
+        print("SENDER CHANNEL NAME:", sender.channel.name)
         for client in self.channels[sender.channel.name].clients:
             if client != sender:
                 client.send_data("!msg", content)
@@ -306,13 +330,15 @@ class Server:
     # ======================================================================================================
 
     def __load_channels(self):
+        print("Loaded channels:")
         for channel_data in self.database.list_channels():
+            print("    {:12} - 0/{:<3} slots (rank <= {:2})".format(channel_data[0], channel_data[1], channel_data[2]))
             self.channels[channel_data[0]] = Channel(channel_data)
 
     def run(self):
         self.__load_channels()
 
-        print("Starting server on '" + self.ip + "':'" + str(self.port) + "'")
+        print("Starting server on '{0}:{1}'".format(self.ip, self.port))
 
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connection.bind((self.ip, self.port))
@@ -320,9 +346,9 @@ class Server:
         # Specifying max connections here doesn't really seem to work for some reason
         self.connection.listen(self.max_clients)
 
-        print("Awaiting connections (" + str(self.max_clients) + " max)...")
+        print("Awaiting connections ({} max)...".format(self.max_clients))
 
-        self.__receive_loop()
+        self.__loop_receive()
 
     def stop(self):
         for client in self.clients:

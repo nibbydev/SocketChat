@@ -52,8 +52,10 @@ class Client:
     def __loop_receive(self):
         try:
             while True:
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8").split(" ", 1)
+                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+                print("[RAW]", data)
 
+                data = data.split(" ", 1)
                 self._sort_data(data[0], data[1])
 
         except ConnectionResetError:
@@ -72,6 +74,7 @@ class Client:
     def _process_login(self, cmd, content):
         if cmd == "!login":
             print("[LOGIN]", content)
+
         elif cmd == "!error":
             print("[ERROR]", content)
             return
@@ -100,7 +103,7 @@ class Client:
                 data = input()
                 self._parse_command(data)
         except KeyboardInterrupt:
-            self.exit()
+            self.disconnect()
 
     def _parse_command(self, data):
         if self.is_connected:
@@ -109,8 +112,8 @@ class Client:
                 return
 
             if self.is_logged_in:
-                if data.startswith("!kick"):
-                    print("not implemented")
+                if data.startswith("!"):
+                    self.send_manual(data)
                 else:
                     self.send_manual("!msg " + data)
             else:
