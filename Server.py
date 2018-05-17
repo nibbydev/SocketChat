@@ -1,4 +1,5 @@
 from threading import Thread
+import sqlite3
 import socket
 
 """
@@ -17,6 +18,87 @@ Headers:
 MAX_MSG_LENGTH = 2056
 
 
+class Database:
+    def __init__(self, name):
+        self.name = name
+
+        self.connection = None
+        self.c = None
+
+        self.__connect()
+
+    def __connect(self):
+        self.connection = sqlite3.connect(self.name, check_same_thread=False)
+        self.c = self.connection.cursor()
+
+        self.__verify_database()
+
+    def close(self):
+        self.connection.commit()
+        self.connection.close()
+
+    # ======================================================================================================
+    # Initial database creation
+    # ======================================================================================================
+
+    def __verify_database(self):
+        row = self.c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+
+        if row is None or "users" not in row:
+            self.__create_table_users()
+            self.__create_table_channels()
+
+            self.connection.commit()
+            print("Created base db structure")
+
+    def __create_table_users(self):
+        asd = "CREATE TABLE users (date TEXT, username TEXT, nick TEXT, password TEXT, rank INT, mute INT, ban INT)"
+        self.c.execute(asd)
+
+        data = [
+            ("-", "root", "root", "123", 0, 0, 0),
+            ("-", "1", "1", "Password", 99, 0, 0)
+        ]
+        self.c.executemany("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+
+    def __create_table_channels(self):
+        self.c.execute("CREATE TABLE channels (name TEXT, password TEXT, rank INT)")
+
+        # Add default channels
+        data = [
+            ("general", "", 99),
+            ("off-topic", "", 99),
+            ("music", "", 99),
+            ("admin", "123", 0)
+        ]
+        self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
+
+    # ======================================================================================================
+    # User management
+    # ======================================================================================================
+
+    def check_username_exists(self, username):
+        row = self.c.execute("SELECT * FROM users WHERE username=?", (username,))
+        entry = row.fetchone()
+
+        return entry is not None
+
+    def check_login(self, username, password):
+        row = self.c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+        return row.fetchone()
+
+    def create_user(self, username, password):
+        if self.check_username_exists(username):
+            return False
+
+        data = ("today", username, username, password, 99, 0, 0)
+        self.c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+
+        self.connection.commit()
+
+        return True
+
+
 class Client:
     def __init__(self, server, connection, address):
         self.server = server
@@ -25,33 +107,112 @@ class Client:
         self.client_id = None
         self.thread = None
 
-    def __receive_loop(self):
+        self.logged_in = False
+
+        self.username = None
+        self.nick = None
+        self.rank = None
+        self.mute = None
+
+    # ======================================================================================================
+    # Receive and process messages
+    # ======================================================================================================
+
+    def __loop_receive(self):
+        self.send_data("!login", "please send login info")
+
         try:
             while True:
-                self._process_data(self.connection.recv(MAX_MSG_LENGTH))
+                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8").split(" ", 1)
+
+                self._sort_data(data[0], data[1])
         except ConnectionResetError:
             pass
         finally:
             self.stop()
 
-    def _process_data(self, data):
-        data = data.decode("utf-8").split("::")
-
-        header = data[0]
-        body = data[1]
-
-        if header == "bye":
-            self.send_data("bye", "")
+    def _sort_data(self, cmd, content):
+        if not self.logged_in:
+            self._process_login(cmd, content)
             return
-        elif header == "message":
-            print("Client {0} ({1}:{2}): '{3}'".format(self.client_id, self.address[0], self.address[1], body))
-            self.server.send_data_to_all(self, "message", "Client {0}> {1}".format(self.client_id, body))
 
-    def start(self, client_id):
+        if cmd == "!msg":
+            print("[{0}] {1} ({2}:{3}): '{4}'".format(
+                self.client_id,
+                self.username,
+                self.address[0],
+                self.address[1],
+                content
+            ))
+        elif cmd == "!kick":
+            print("Not implemented")
+
+    def _process_login(self, cmd, content):
+        if cmd == "!login":
+            try:
+                username = content.split(" ")[0]
+                password = content.split(" ")[1]
+            except IndexError:
+                self.send_data("!error", "invalid info provided")
+                self.logged_in = False
+                return
+
+            user_data = self.server.database.check_login(username, password)
+
+            if user_data is None:
+                self.send_data("!error", "invalid username or password")
+                self.logged_in = False
+                return
+            elif user_data[6] is 1:
+                self.send_data("!error", "you are banned")
+                self.logged_in = False
+                return
+
+            self.send_data("!success", "logged in successfully")
+            self.logged_in = True
+
+            self.username = user_data[1]
+            self.nick = user_data[2]
+            self.rank = user_data[4]
+            self.mute = user_data[5]
+
+        elif cmd == "!register":
+            try:
+                username = content.split(" ")[0]
+                password = content.split(" ")[1]
+            except IndexError:
+                self.send_data("!error", "invalid info provided")
+                self.logged_in = False
+                return
+
+            self.logged_in = self.server.database.create_user(username, password)
+
+            if self.logged_in:
+                self.send_data("!success", "account created successfully")
+            else:
+                self.send_data("!error", "username already in use")
+
+    # ======================================================================================================
+    # Send data
+    # ======================================================================================================
+
+    def send_data(self, cmd, content):
+        payload = cmd + " " + content
+
+        try:
+            self.connection.send(payload.encode("utf-8"))
+        except ConnectionResetError:
+            pass
+
+    # ======================================================================================================
+    # Control functions
+    # ======================================================================================================
+
+    def run(self, client_id):
         self.client_id = client_id
 
         self.thread = Thread(
-            target=self.__receive_loop,
+            target=self.__loop_receive,
             name="client-" + str(self.client_id),
             daemon=True
         )
@@ -60,65 +221,54 @@ class Client:
 
     def stop(self):
         msg = "Client {0} ({1}:{2}) disconnected".format(self.client_id, self.address[0], self.address[1])
-        self.server.send_data_to_all(self, "disconnect", msg)
+        self.server.send_data_to_all(self, "!disconnect", msg)
         print(msg)
 
         self.connection.close()
         self.server.clients.remove(self)
 
-    def send_data(self, header, body):
-        payload = header + "::" + body
-
-        try:
-            self.connection.send(payload.encode("utf-8"))
-        except ConnectionResetError:
-            pass
+    # ======================================================================================================
+    # Utility functions
+    # ======================================================================================================
 
 
 class Server:
-    def __init__(self, ip, port, max_clients):
+    def __init__(self, database, ip, port, max_clients):
         self.ip = ip
         self.port = port
         self.max_clients = max_clients
         self.clients = []
 
+        self.database = database
         self.connection = None
+
+    # ======================================================================================================
+    # Receive and process clients
+    # ======================================================================================================
 
     def __receive_loop(self):
         while True:
             connection, address = self.connection.accept()
             client = Client(self, connection, address)
 
-            skip = self._check_server_full(client)
-            if skip: continue
-
             self.clients.append(client)
             client_id = self.clients.index(client)
-            client.start(client_id)
+            client.run(client_id)
 
-            msg = "Client {0} ({1}:{2}) connected".format(client_id, address[0], address[1])
-            self.send_data_to_all(client, "connected", msg)
-            print(msg)
+    # ======================================================================================================
+    # Send data
+    # ======================================================================================================
 
-    def _check_server_full(self, client):
-        if len(self.clients) >= self.max_clients:
-            client.send_data("full")
-            client.connection.detach()
-
-            msg = "Client (" + client.address[0] + ":" + str(client.address[1]) + ") couldn't connect (server full)"
-            self.send_data_to_all(client, "couldn't connect", msg)
-            print(msg)
-            return True
-        else:
-            client.send_data("welcome", "")
-            return False
-
-    def send_data_to_all(self, sender, header, body):
+    def send_data_to_all(self, sender, cmd, content):
         for client in self.clients:
             if client != sender:
-                client.send_data(header, body)
+                client.send_data(cmd, content)
 
-    def start(self):
+    # ======================================================================================================
+    # Control functions
+    # ======================================================================================================
+
+    def run(self):
         print("Starting server on '" + self.ip + "':'" + str(self.port) + "'")
 
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -133,18 +283,19 @@ class Server:
 
     def stop(self):
         for client in self.clients:
-            client.send_data("exit")
             client.stop()
         self.connection.close()
 
 
 def init():
-    server = Server("localhost", 8888, 5)
+    database = Database("test.db")
+    server = Server(database, "localhost", 8888, 5)
 
     try:
-        server.start()
+        server.run()
     finally:
         server.stop()
+        database.close()
 
 
 if __name__ == "__main__":
