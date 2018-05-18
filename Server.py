@@ -83,7 +83,7 @@ class Database:
         self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
 
     # ======================================================================================================
-    # Entry creation
+    # Entry checking
     # ======================================================================================================
 
     def check_username_exists(self, username):
@@ -92,23 +92,72 @@ class Database:
 
         return entry is not None
 
+    def check_channel_exists(self, channel):
+        row = self.c.execute("SELECT * FROM channels WHERE name=?", (channel,))
+        entry = row.fetchone()
+
+        return entry is not None
+
     def check_login(self, username, password):
         row = self.c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
         return row.fetchone()
+
+    # ======================================================================================================
+    # Entry creation
+    # ======================================================================================================
 
     def create_user(self, username, password):
         if self.check_username_exists(username):
             return False
 
-        data = ("today", username, username, password, 99, 0, 0)
-        self.c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+        try:
+            data = ("today", username, username, password, 99, 0, 0)
+            self.c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
 
-        self.connection.commit()
+    def create_channel(self, name, user_limit, rank):
+        if self.check_channel_exists(name):
+            return False
 
-        return True
+        try:
+            data = (name, user_limit, rank)
+            self.c.execute("INSERT INTO users VALUES (?,?,?)", data)
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
 
     # ======================================================================================================
-    # Channel management
+    # Entry removal
+    # ======================================================================================================
+
+    def remove_channel(self, channel):
+        try:
+            self.c.execute("DELETE FROM channels WHERE name=?", (channel,))
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
+
+    def remove_user(self, user):
+        try:
+            self.c.execute("DELETE FROM users WHERE username=?", (user,))
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
+
+    # ======================================================================================================
+    # Entry listing
     # ======================================================================================================
 
     def list_channels(self):
