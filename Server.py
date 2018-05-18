@@ -334,11 +334,10 @@ class Client:
 
         self.username = user_data[1]
         self.nick = user_data[2]
-        self.rank = user_data[4]
         self.mute = user_data[5]
 
         self.__join_default_channel()
-        self.__load_permissions()
+        self.__load_permissions(user_data[4])
 
         print("[LOGIN] '{0}' just logged in as client {1} from '{2}:{3}'".format(
             self.username,
@@ -362,21 +361,30 @@ class Client:
         self.send_data("!success", "account created and logged in")
         self.logged_in = True
 
-        self.__join_default_channel()
-        self.__load_permissions()
-
         self.username = username
-        self.nick = username
-        self.rank = 99
-        self.mute = 0
+        self.mute = False
+
+        self.__join_default_channel()
+        self.__load_permissions("99")
+
+        print("[REGISTER] '{0}' just registered as client {1} from '{2}:{3}'".format(
+            self.username,
+            self.client_id,
+            self.address[0],
+            self.address[1]
+        ))
+
+    # ======================================================================================================
+    # After login or registration
+    # ======================================================================================================
 
     def __join_default_channel(self):
         self.channel = self.server.channels["default"]
         self.channel.clients.append(self)
 
-    def __load_permissions(self):
+    def __load_permissions(self, user_rank):
         for rank, permission in self.server.permissions.items():
-            if self.rank <= int(rank):
+            if int(user_rank) <= int(rank):
                 self.permission = permission
                 break
 
@@ -390,7 +398,7 @@ class Client:
         reply = ""
 
         for name, channel in self.server.channels.items():
-            if channel.rank >= self.rank:
+            if channel.rank >= self.permission.rank:
                 reply += channel.to_csv() + ","
 
         if reply.endswith(","):
@@ -398,18 +406,20 @@ class Client:
 
         self.send_data("!channels", reply)
 
-    def __cmd_mute(self, content):
+    def __cmd_mute(self, target):
         if not self.permission.mute:
-            return False
+            self.send_data("!error", "not enough permissions")
+            return
 
         for client in self.server.clients:
-            if content != client.username:
-                return False
-            elif client.rank >= self.rank:
-                return False
+            if target != client.username:
+                continue
+            elif client.rank <= self.permission.rank:
+                self.send_data("!error", "the user has bigger than or equal rank than you")
+                return
 
             client.mute = not client.mute
-            self.server.database.mute_user(content, client.mute)
+            self.server.database.mute_user(target, client.mute)
 
             print("[MUTE] {} {} {}".format(
                 self.username,
@@ -417,7 +427,9 @@ class Client:
                 client.username
             ))
 
-            return True
+            self.send_data("!success", "user {} was {}".format(client.username, "muted" if client.mute else "unmuted"))
+
+        self.send_data("!error", "no client by that username")
 
     # ======================================================================================================
     # Send data

@@ -73,7 +73,11 @@ class Client:
             self.__process_login(cmd, content)
             return
 
-        if cmd == "!msg":
+        if cmd == "!error":
+            print("[ERROR]", content)
+        elif cmd == "!success":
+            print("[SUCCESS]", content)
+        elif cmd == "!msg":
             print(content)
         elif cmd == "!channels":
             self.__parse_channels(content)
@@ -87,7 +91,7 @@ class Client:
             print("[ERROR]", content)
             return
         elif cmd == "!success":
-            print("[SUCC]", content)
+            print("[SUCCESS]", content)
             self.is_logged_in = True
             return
 
