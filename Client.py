@@ -1,8 +1,12 @@
 from threading import Thread
+from time import sleep
 import socket
 
 
 MAX_MSG_LENGTH = 2056
+
+DEV_USERNAME = "2"
+DEV_PASSWORD = "2"
 
 
 class Client:
@@ -52,6 +56,7 @@ class Client:
     def __loop_receive(self):
         try:
             while True:
+                sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
                 print("[RAW - RECEIVE]", data)
 
@@ -77,7 +82,7 @@ class Client:
         if cmd == "!login":
             print("[LOGIN]", content)
             # TODO: remove
-            self.send_data("!login 2 2")
+            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
         elif cmd == "!error":
             print("[ERROR]", content)
             return
@@ -122,6 +127,7 @@ class Client:
 
         try:
             while True:
+                sleep(0.1)
                 data = input()
                 self.__parse_local_command(data)
         except KeyboardInterrupt:
@@ -138,7 +144,6 @@ class Client:
                     self.send_data(data)
                 else:
                     self.send_data("!msg " + data)
-                    print("!msg " + data)
             else:
                 if data.startswith("!login"):
                     self.send_data(data)

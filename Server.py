@@ -1,4 +1,5 @@
 from threading import Thread
+from time import sleep
 import sqlite3
 import socket
 
@@ -66,7 +67,8 @@ class Database:
             ("-", "1", "1", "1", 99, 0, 0),
             ("-", "2", "2", "2", 80, 0, 0),
             ("-", "3", "3", "3", 99, 1, 0),
-            ("-", "4", "4", "4", 99, 1, 1)
+            ("-", "4", "4", "4", 99, 1, 1),
+            ("-", "5", "5", "5", 4, 0, 0)
         ]
         self.c.executemany("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
 
@@ -173,6 +175,26 @@ class Database:
             return True
 
     # ======================================================================================================
+    # Entry updating
+    # ======================================================================================================
+
+    def mute_user(self, username, mute):
+        if self.check_username_exists(username):
+            return False
+
+        # Whatever value is passed to 'mute', when it's True, it's 1
+        mute = 1 if mute else 0
+
+        try:
+            self.c.execute("UPDATE users SET mute=? WHERE username =?", (mute, username))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
+
+    # ======================================================================================================
     # Entry listing
     # ======================================================================================================
 
@@ -231,7 +253,6 @@ class Client:
 
         self.username = None
         self.nick = None
-        self.rank = None
         self.mute = None
 
     # ======================================================================================================
@@ -243,6 +264,7 @@ class Client:
 
         try:
             while True:
+                sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
                 print("[RAW - RECEIVE]", data)
                 self.__parse_data(data)
@@ -268,9 +290,13 @@ class Client:
         elif cmd == "!channels":
             self.__cmd_channels()
         elif cmd == "!mute":
-            self.__cmd_mute()
+            self.__cmd_mute(content)
 
     def __form_message(self, msg):
+        if self.mute:
+            self.send_data("!mute", "you are muted")
+            return
+
         print("[MSG][{}] {} ({}:{}): '{}'".format(
             self.permission.name,
             self.username,
@@ -279,7 +305,9 @@ class Client:
             msg
         ))
 
-        self.server.send_msg_from_client_to_all_in_channel(self, msg)
+        formatted_msg = "[{}][{}] {}: {}".format(self.channel.name, self.permission.name, self.username, msg)
+
+        self.server.send_msg_from_client_to_all_in_channel(self, formatted_msg)
 
     def __login(self, content):
         try:
@@ -347,7 +375,11 @@ class Client:
         self.channel.clients.append(self)
 
     def __load_permissions(self):
-        self.permission = self.server.permissions[self.rank]
+        for rank, permission in self.server.permissions.items():
+            if self.rank <= int(rank):
+                self.permission = permission
+                break
+
         self.permission.clients.append(self)
 
     # ======================================================================================================
@@ -366,11 +398,26 @@ class Client:
 
         self.send_data("!channels", reply)
 
-    def __cmd_mute(self):
-        if self.permission.mute:
-            return True
-        else:
+    def __cmd_mute(self, content):
+        if not self.permission.mute:
             return False
+
+        for client in self.server.clients:
+            if content != client.username:
+                return False
+            elif client.rank >= self.rank:
+                return False
+
+            client.mute = not client.mute
+            self.server.database.mute_user(content, client.mute)
+
+            print("[MUTE] {} {} {}".format(
+                self.username,
+                "muted" if client.mute else "unmuted",
+                client.username
+            ))
+
+            return True
 
     # ======================================================================================================
     # Send data
@@ -434,6 +481,7 @@ class Server:
 
     def __loop_receive(self):
         while True:
+            sleep(0.1)
             connection, address = self.connection.accept()
             client = Client(self, connection, address)
 
