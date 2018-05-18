@@ -53,12 +53,10 @@ class Client:
 
     def __help(self):
         help_string = """
-    Welcome, to the chat application!
-    Generic commands are:
-        * !connect <ip> <port>
-    Once connected, you can use:
-        * !login <username> <password>
-        * !register <username> <password>
+==================================
+| Usable commands are:           |
+|     * !connect <ip> <port>     |
+==================================
         """.strip()
 
         print(help_string)
@@ -86,8 +84,21 @@ class Client:
             self.__help()
 
     def __parse_received_data(self, cmd, content):
+        if cmd == "!box":
+            print(content)
+            return
+
         if not self.is_logged_in:
-            self.__process_login(cmd, content)
+            if cmd == "!error":
+                print("[ERROR]", content)
+                return
+            elif cmd == "!success":
+                print("[SUCCESS]", content)
+                self.is_logged_in = True
+                return
+
+            # TODO: remove this
+            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
             return
 
         if cmd == "!error":
@@ -111,19 +122,6 @@ class Client:
         else:
             print("unknown server command: '{} {}'".format(cmd, content))
 
-    def __process_login(self, cmd, content):
-        if cmd == "!login":
-            print("[LOGIN]", content)
-            # TODO: remove
-            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
-        elif cmd == "!error":
-            print("[ERROR]", content)
-            return
-        elif cmd == "!success":
-            print("[SUCCESS]", content)
-            self.is_logged_in = True
-            return
-
     def __parse_channels(self, data):
         channels = data.split(",")
         print("[CHANNELS] Channels and users in the server:")
@@ -131,7 +129,7 @@ class Client:
         for channel_data in channels:
             data = channel_data.split(":")
 
-            print(" *  {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
+            print(" * {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
 
             if data[4]:
                 for client in data[4].split(";"):

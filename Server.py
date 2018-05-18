@@ -269,7 +269,9 @@ class Client:
     # ======================================================================================================
 
     def __loop_receive(self):
-        self.send_data("!login", "login with '!login <username> <password>' or register '!register <username> <password>'")
+        self.__cmd_help_login()
+        sleep(0.1)
+        self.send_data("!login", "")
 
         try:
             while True:
@@ -306,10 +308,12 @@ class Client:
             self.__cmd_kick(content)
         elif cmd == "!ban":
             self.__cmd_ban(content)
+        elif cmd == "!motd":
+            self.__cmd_help_motd()
         elif cmd == "!help":
-            self.__cmd_help()
+            self.__cmd_help_commands()
         else:
-            self.send_data("!error", "unknown command")
+            self.send_data("!error", "server got unknown command: '{} {}'".format(cmd, content))
 
     def __form_message(self, msg):
         if self.mute:
@@ -328,9 +332,9 @@ class Client:
 
         self.server.send_msg_from_client_to_all_in_channel(self, formatted_msg)
 
-    # -----------------------------
+    # ----------------------------
     # Login or registration
-    # -----------------------------
+    # ----------------------------
 
     def __login(self, content):
         try:
@@ -423,7 +427,7 @@ class Client:
 
         sleep(0.1)
 
-        self.__cmd_help()
+        self.__cmd_help_motd()
 
     # ======================================================================================================
     # Commands
@@ -533,21 +537,47 @@ class Client:
         self.send_data("!error", "no user by that username")
         return
 
-    def __cmd_help(self):
+    # ----------------------------
+    # Help pages
+    # ----------------------------
+
+    def __cmd_help_motd(self):
         help_string = """
-    Welcome, {user} to the {ip}:{port} server!
-    Here you'll find absolutely nothing!
-    User commands are:
-        * !help - shows this page
-        * !channels - lists all available channels and the users in them
-        * !channel <name> - join a channel
-    Admin commands are:
-        * !mute <username> - mutes or unmutes user (needs permissions)
-        * !kick <username> - disconnects a user (needs permissions)
-        * !ban <username> - bans or unbans user (needs permissions)
+===========================================================
+| Welcome, {user}, to the {ip}:{port} server!
+| Get started with !help
+===========================================================
         """.strip().format(user=self.username, ip=self.server.ip, port=self.server.port)
 
-        self.send_data("!help", help_string)
+        self.send_data("!box", help_string)
+
+    def __cmd_help_commands(self):
+        help_string = """
+========================================
+| User commands are:                   |
+|   * !help - shows this page          |
+|   * !channels - lists all available  |
+|      channels and the users in them  |
+|   * !channel <name> - join a channel |
+| Admin commands are:                  |
+|   * !mute <username> - toggle mute   |
+|   * !kick <username> - kick user     |
+|   * !ban <username> - toggle ban     |
+========================================
+        """.strip()
+
+        self.send_data("!box", help_string)
+
+    def __cmd_help_login(self):
+        help_string = """
+=========================================
+| Usable commands are:                  |
+|     * !login <username> <password>    |
+|     * !register <username> <password> |
+=========================================
+        """.strip()
+
+        self.send_data("!box", help_string)
 
     # ======================================================================================================
     # Send data
@@ -555,8 +585,6 @@ class Client:
 
     def send_data(self, cmd, content):
         payload = cmd + " " + content
-
-        # print("[RAW - SEND]", payload)
 
         try:
             self.connection.send(payload.encode("utf-8"))
