@@ -216,12 +216,14 @@ class Channel:
         self.clients = []
 
     def to_csv(self):
-        return "{0}:{1}:{2}:{3}".format(
-            self.name,
-            len(self.clients),
-            self.max,
-            self.rank
-        )
+        client_csv = ""
+        for client in self.clients:
+            client_csv += "[{}] {}:".format(client.permission.name, client.username)
+
+        if client_csv.endswith(";"):
+            client_csv = client_csv[:len(client_csv) - 1]
+
+        return "{}:{}:{}:{}:{}".format(self.name, len(self.clients), self.max, self.rank, client_csv)
 
 
 class Permission:
@@ -229,11 +231,11 @@ class Permission:
         self.rank = int(data[0])
         self.name = data[1]
 
-        self.mute = True if data[2] == "1" else False
-        self.kick = True if data[3] == "1" else False
-        self.ban = True if data[4] == "1" else False
-        self.join = True if data[5] == "1" else False
-        self.nick = True if data[6] == "1" else False
+        self.mute = True if data[2] == 1 else False
+        self.kick = True if data[3] == 1 else False
+        self.ban = True if data[4] == 1 else False
+        self.join = True if data[5] == 1 else False
+        self.nick = True if data[6] == 1 else False
 
         self.clients = []
 
@@ -253,7 +255,7 @@ class Client:
 
         self.username = None
         self.nick = None
-        self.mute = None
+        self.mute = False
 
     # ======================================================================================================
     # Receive and process messages
@@ -329,15 +331,14 @@ class Client:
             self.logged_in = False
             return
 
-        self.send_data("!success", "logged in successfully")
         self.logged_in = True
-
         self.username = user_data[1]
         self.nick = user_data[2]
         self.mute = user_data[5]
 
         self.__join_default_channel()
         self.__load_permissions(user_data[4])
+        self.__welcome("logged in successfully")
 
         print("[LOGIN] '{0}' just logged in as client {1} from '{2}:{3}'".format(
             self.username,
@@ -358,14 +359,12 @@ class Client:
             self.send_data("!error", "username already in use")
             return
 
-        self.send_data("!success", "account created and logged in")
         self.logged_in = True
-
         self.username = username
-        self.mute = False
 
         self.__join_default_channel()
         self.__load_permissions("99")
+        self.__welcome("account created and logged in")
 
         print("[REGISTER] '{0}' just registered as client {1} from '{2}:{3}'".format(
             self.username,
@@ -389,6 +388,19 @@ class Client:
                 break
 
         self.permission.clients.append(self)
+
+    def __welcome(self, msg):
+        self.send_data("!success", msg)
+
+        sleep(0.1)
+
+        self.send_data("!welcome", "logged in as '{}' with rank '{}' in channel '{}'".format(
+            self.username, self.permission.name, self.channel.name
+        ))
+
+        sleep(0.1)
+
+        self.__cmd_channels()
 
     # ======================================================================================================
     # Commands
@@ -414,8 +426,8 @@ class Client:
         for client in self.server.clients:
             if target != client.username:
                 continue
-            elif client.rank <= self.permission.rank:
-                self.send_data("!error", "the user has bigger than or equal rank than you")
+            elif client.permission.rank <= self.permission.rank:
+                self.send_data("!error", "the user has bigger or equal rank than you")
                 return
 
             client.mute = not client.mute
@@ -428,6 +440,7 @@ class Client:
             ))
 
             self.send_data("!success", "user {} was {}".format(client.username, "muted" if client.mute else "unmuted"))
+            return
 
         self.send_data("!error", "no client by that username")
 
@@ -511,6 +524,11 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
+        for client in self.channels[sender.channel.name].clients:
+            if client != sender:
+                client.send_data("!msg", content)
+
+    def send_msg_to_specific_client(self, sender, receiver, content):
         for client in self.channels[sender.channel.name].clients:
             if client != sender:
                 client.send_data("!msg", content)

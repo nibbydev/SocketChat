@@ -5,8 +5,8 @@ import socket
 
 MAX_MSG_LENGTH = 2056
 
-DEV_USERNAME = "2"
-DEV_PASSWORD = "2"
+DEV_USERNAME = "5"
+DEV_PASSWORD = "5"
 
 
 class Client:
@@ -97,17 +97,18 @@ class Client:
 
     def __parse_channels(self, data):
         channels = data.split(",")
-        print("Channels in the server:")
+        print("Channels and users in the server:")
 
         for channel_data in channels:
-            split_channel_data = channel_data.split(":")
+            data = channel_data.split(":")
 
-            print("    '{:12}' {:>3}/{:<3} slots (accessible to rank <= {:2})".format(
-                split_channel_data[0],
-                split_channel_data[1],
-                split_channel_data[2],
-                split_channel_data[3]
+            print(" *  {:12} {:>3}/{:<3} slots (rank <= {:2})".format(
+                data[0], data[1], data[2], data[3]
             ))
+
+            if data[4]:
+                for client in data[4].split(";"):
+                    print("      * {}".format(client))
 
     # ======================================================================================================
     # Send data
