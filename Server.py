@@ -5,6 +5,7 @@ import socket
 
 
 MAX_MSG_LENGTH = 4096
+CHANNEL_LOG_LENGTH = 32
 
 # These only have effect when the database is generated
 ROOT_USERNAME = "root"
@@ -221,6 +222,7 @@ class Channel:
         self.rank = int(data[2])
 
         self.clients = []
+        self.chat_log = []
 
     def to_csv(self):
         client_csv = ""
@@ -231,6 +233,12 @@ class Channel:
             client_csv = client_csv[:len(client_csv) - 1]
 
         return "{}:{}:{}:{}:{}".format(self.name, len(self.clients), self.max, self.rank, client_csv)
+
+    def log(self, msg):
+        self.chat_log.append(msg)
+
+        if len(self.chat_log) > CHANNEL_LOG_LENGTH:
+            self.chat_log = self.chat_log[CHANNEL_LOG_LENGTH:]
 
 
 class Permission:
@@ -301,7 +309,9 @@ class Client:
         if cmd == "!msg":
             self.__form_message(content)
         elif cmd == "!channels":
-            self.__cmd_channels()
+            self.__cmd_list_channels()
+        elif cmd == "!channel":
+            self.__cmd_switch_channel(content)
         elif cmd == "!mute":
             self.__cmd_mute(content)
         elif cmd == "!kick":
@@ -433,7 +443,7 @@ class Client:
     # Commands
     # ======================================================================================================
 
-    def __cmd_channels(self):
+    def __cmd_list_channels(self):
         reply = ""
 
         for name, channel in self.server.channels.items():
@@ -444,6 +454,27 @@ class Client:
             reply = reply[:len(reply) - 1]
 
         self.send_data("!channels", reply)
+
+    def __cmd_switch_channel(self, target):
+        for name, channel in self.server.channels.items():
+            if name == target:
+                if channel.rank < self.permission.rank:
+                    self.send_data("!error", "not enough permissions to join '{}'".format(target))
+                    return
+                elif len(channel.clients) >= channel.max:
+                    self.send_data("!error", "channel '{}' is full".format(target))
+                    return
+
+                self.send_data("!success", "switched from channel '{}' to '{}'".format(
+                    self.channel.name, channel.name
+                ))
+
+                self.channel.clients.remove(self)
+                self.channel = channel
+                self.channel.clients.append(self)
+                return
+
+        self.send_data("!error", "couldn't find channel '{}'".format(target))
 
     def __cmd_mute(self, target):
         if not self.permission.mute:
@@ -621,17 +652,17 @@ class Client:
 
         try:
             self.server.clients.remove(self)
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
 
         try:
             self.channel.clients.remove(self)
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
 
         try:
             self.permission.clients.remove(self)
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
 
 

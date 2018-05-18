@@ -5,8 +5,8 @@ import socket
 
 MAX_MSG_LENGTH = 4096
 
-DEV_USERNAME = "2"
-DEV_PASSWORD = "2"
+DEV_USERNAME = "5"
+DEV_PASSWORD = "5"
 
 
 class Client:
@@ -70,7 +70,6 @@ class Client:
             while True:
                 sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                # print("[RAW - RECEIVE]", data)
 
                 data = data.split(" ", 1)
                 self.__parse_received_data(data[0], data[1])
@@ -89,10 +88,7 @@ class Client:
             return
 
         if not self.is_logged_in:
-            if cmd == "!error":
-                print("[ERROR]", content)
-                return
-            elif cmd == "!success":
+            if cmd == "!success":
                 print("[SUCCESS]", content)
                 self.is_logged_in = True
                 return
