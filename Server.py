@@ -227,6 +227,8 @@ class Client:
         self.logged_in = False
 
         self.channel = None
+        self.permission = None
+
         self.username = None
         self.nick = None
         self.rank = None
@@ -263,17 +265,15 @@ class Client:
 
         if cmd == "!msg":
             self.__form_message(content)
-
         elif cmd == "!channels":
             self.__cmd_channels()
-
-        if cmd != "!msg":
-            print("[RAW - RECEIVE] '{0}' sent command '{1}' with data '{2}'".format(self.username, cmd, content))
+        elif cmd == "!mute":
+            self.__cmd_mute()
 
     def __form_message(self, msg):
-        print("[MSG] {0} ({1}) ({2}:{3}): '{4}'".format(
+        print("[MSG][{}] {} ({}:{}): '{}'".format(
+            self.permission.name,
             self.username,
-            self.nick,
             self.address[0],
             self.address[1],
             msg
@@ -310,6 +310,7 @@ class Client:
         self.mute = user_data[5]
 
         self.__join_default_channel()
+        self.__load_permissions()
 
         print("[LOGIN] '{0}' just logged in as client {1} from '{2}:{3}'".format(
             self.username,
@@ -333,6 +334,9 @@ class Client:
         self.send_data("!success", "account created and logged in")
         self.logged_in = True
 
+        self.__join_default_channel()
+        self.__load_permissions()
+
         self.username = username
         self.nick = username
         self.rank = 99
@@ -341,6 +345,14 @@ class Client:
     def __join_default_channel(self):
         self.channel = self.server.channels["default"]
         self.channel.clients.append(self)
+
+    def __load_permissions(self):
+        self.permission = self.server.permissions[self.rank]
+        self.permission.clients.append(self)
+
+    # ======================================================================================================
+    # Commands
+    # ======================================================================================================
 
     def __cmd_channels(self):
         reply = ""
@@ -353,6 +365,12 @@ class Client:
             reply = reply[:len(reply) - 1]
 
         self.send_data("!channels", reply)
+
+    def __cmd_mute(self):
+        if self.permission.mute:
+            return True
+        else:
+            return False
 
     # ======================================================================================================
     # Send data
@@ -384,9 +402,8 @@ class Client:
         self.thread.start()
 
     def stop(self):
-        print("[DISCONNECT] '{0}' disconnected as client {1} from '{2}:{3}'".format(
+        print("[DISCONNECT] '{}' disconnected from '{}:{}'".format(
             self.username,
-            self.client_id,
             self.address[0],
             self.address[1]
         ))
@@ -396,10 +413,7 @@ class Client:
 
         self.server.clients.remove(self)
         self.channel.clients.remove(self)
-
-    # ======================================================================================================
-    # Utility functions
-    # ======================================================================================================
+        self.permission.clients.remove(self)
 
 
 class Server:
