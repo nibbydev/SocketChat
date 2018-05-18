@@ -3,20 +3,12 @@ from time import sleep
 import sqlite3
 import socket
 
-"""
-Headers:
-    'disconnect' - a client disconnected
-    'bye' - that client requested a disconnect
-    'message' - a text message
-    'welcome' - indicating a client it may join
-    'connected' - a new client joined
-    'couldn't connect' - server full or something, a client couldn't connect
-    'full' - indicating a client the server is full
-    'exit' - the clients MUST disconnect
-"""
-
 
 MAX_MSG_LENGTH = 4096
+
+# These only have effect when the database is generated
+ROOT_USERNAME = "root"
+ROOT_PASSWORD = "123"
 
 
 class Database:
@@ -59,18 +51,26 @@ class Database:
         self.connection.commit()
 
     def __create_table_users(self):
-        asd = "CREATE TABLE users (date TEXT, username TEXT, nick TEXT, password TEXT, rank INT, mute INT, ban INT)"
-        self.c.execute(asd)
+        self.c.execute(
+            """CREATE TABLE users (
+                    id INTEGER PRIMARY KEY, 
+                    username TEXT UNIQUE, 
+                    nick TEXT DEFAULT NULL, 
+                    password TEXT NOT NULL, 
+                    rank INT DEFAULT 99, 
+                    muted INT DEFAULT 0, 
+                    banned INT DEFAULT 0)"""
+        )
 
         data = [
-            ("-", "root", "root", "123", 0, 0, 0),
-            ("-", "1", "1", "1", 99, 0, 0),
-            ("-", "2", "2", "2", 80, 0, 0),
-            ("-", "3", "3", "3", 99, 1, 0),
-            ("-", "4", "4", "4", 99, 1, 1),
-            ("-", "5", "5", "5", 4, 0, 0)
+            (ROOT_USERNAME, ROOT_PASSWORD, 0),
+            ("1", "1", 99),
+            ("2", "2", 80),
+            ("3", "3", 99),
+            ("4", "4", 99),
+            ("5", "5", 4)
         ]
-        self.c.executemany("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+        self.c.executemany("INSERT INTO users(username,password,rank) VALUES (?,?,?)", data)
 
     def __create_table_channels(self):
         self.c.execute("CREATE TABLE channels (name TEXT, max INT, rank INT)")
