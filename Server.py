@@ -52,6 +52,8 @@ class Database:
                 self.__create_table_users()
             if ("channels",) not in data:
                 self.__create_table_channels()
+            if ("permissions",) not in data:
+                self.__create_table_permissions()
 
         self.connection.commit()
 
@@ -81,6 +83,20 @@ class Database:
         ]
 
         self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
+
+    def __create_table_permissions(self):
+        self.c.execute("CREATE TABLE permissions (rank INT, name TEXT, mute INT, kick INT, ban INT, join_full INT, change_nick INT)")
+
+        # Add default channels
+        data = [
+            (0, "owner", 1, 1, 1, 1, 1),
+            (5, "admin", 1, 1, 1, 1, 1),
+            (10, "mod", 1, 1, 0, 1, 1),
+            (80, "member", 0, 0, 0, 0, 1),
+            (99, "default", 0, 0, 0, 0, 0)
+        ]
+
+        self.c.executemany("INSERT INTO permissions VALUES (?,?,?,?,?,?,?)", data)
 
     # ======================================================================================================
     # Entry checking
@@ -164,12 +180,16 @@ class Database:
         rows = self.c.execute("SELECT * FROM channels")
         return rows.fetchall()
 
+    def list_permissions(self):
+        rows = self.c.execute("SELECT * FROM permissions")
+        return rows.fetchall()
+
 
 class Channel:
-    def __init__(self, channel_data):
-        self.name = channel_data[0]
-        self.max = int(channel_data[1])
-        self.rank = int(channel_data[2])
+    def __init__(self, data):
+        self.name = data[0]
+        self.max = int(data[1])
+        self.rank = int(data[2])
 
         self.clients = []
 
@@ -180,6 +200,20 @@ class Channel:
             self.max,
             self.rank
         )
+
+
+class Permission:
+    def __init__(self, data):
+        self.rank = int(data[0])
+        self.name = data[1]
+
+        self.mute = True if data[2] == "1" else False
+        self.kick = True if data[3] == "1" else False
+        self.ban = True if data[4] == "1" else False
+        self.join = True if data[5] == "1" else False
+        self.nick = True if data[6] == "1" else False
+
+        self.clients = []
 
 
 class Client:
@@ -375,6 +409,7 @@ class Server:
         self.max_clients = max_clients
         self.clients = []
         self.channels = {}
+        self.permissions = {}
 
         self.database = database
         self.connection = None
@@ -407,17 +442,45 @@ class Server:
                 client.send_data("!msg", content)
 
     # ======================================================================================================
-    # Control functions
+    # Load data from database on program start
     # ======================================================================================================
 
     def __load_channels(self):
         print("Loaded channels:")
-        for channel_data in self.database.list_channels():
-            print("    {:12} - 0/{:<3} slots (rank <= {:2})".format(channel_data[0], channel_data[1], channel_data[2]))
-            self.channels[channel_data[0]] = Channel(channel_data)
+        print("|   {:>12} | {:>5} | {:>4} |".format(
+            "name", "slots", "rank"
+        ))
+
+        for data in self.database.list_channels():
+            print("|   {:>12} | {:>5} | {:>4} |".format(
+                data[0], data[1], data[2]
+            ))
+            self.channels[data[0]] = Channel(data)
+
+        print()
+
+    def __load_permissions(self):
+        print("Loaded permissions:")
+        print("|   {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+            "rank", "name", "mute", "kick", "ban", "join full", "change nick"
+        ))
+
+        for data in self.database.list_permissions():
+            print("|   {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            ))
+
+            self.permissions[data[0]] = Permission(data)
+
+        print()
+
+    # ======================================================================================================
+    # Control functions
+    # ======================================================================================================
 
     def run(self):
         self.__load_channels()
+        self.__load_permissions()
 
         print("Starting server on '{0}:{1}'".format(self.ip, self.port))
 
