@@ -3,7 +3,7 @@ from time import sleep
 import socket
 
 
-MAX_MSG_LENGTH = 2056
+MAX_MSG_LENGTH = 4096
 
 DEV_USERNAME = "2"
 DEV_PASSWORD = "2"
@@ -83,6 +83,7 @@ class Client:
             print("Connection closed")
         finally:
             self.disconnect()
+            self.__help()
 
     def __parse_received_data(self, cmd, content):
         if not self.is_logged_in:

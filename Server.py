@@ -16,7 +16,7 @@ Headers:
 """
 
 
-MAX_MSG_LENGTH = 2056
+MAX_MSG_LENGTH = 4096
 
 
 class Database:
@@ -328,30 +328,33 @@ class Client:
 
         self.server.send_msg_from_client_to_all_in_channel(self, formatted_msg)
 
+    # -----------------------------
+    # Login or registration
+    # -----------------------------
+
     def __login(self, content):
         try:
             username = content.split(" ")[0]
             password = content.split(" ")[1]
         except IndexError:
             self.send_data("!error", "invalid info provided")
-            self.logged_in = False
             return
 
         user_data = self.server.database.check_login(username, password)
 
         if user_data is None:
             self.send_data("!error", "invalid username or password")
-            self.logged_in = False
             return
         elif user_data[6] is 1:
             self.send_data("!error", "you are banned")
-            self.logged_in = False
             return
 
         self.logged_in = True
         self.username = user_data[1]
         self.nick = user_data[2]
         self.mute = user_data[5]
+
+        self.__disconnect_if_already_logged_in()
 
         self.__join_default_channel()
         self.__load_permissions(user_data[4])
@@ -390,9 +393,16 @@ class Client:
             self.address[1]
         ))
 
-    # ======================================================================================================
+    def __disconnect_if_already_logged_in(self):
+        for client in self.server.clients:
+            if client is not self and client.username is self.username:
+                client.send_data("!kick", "you logged in from another location")
+                client.stop()
+                break
+
+    # ----------------------------
     # After login or registration
-    # ======================================================================================================
+    # ----------------------------
 
     def __join_default_channel(self):
         self.channel = self.server.channels["default"]
@@ -573,6 +583,7 @@ class Client:
             return
 
         self.connection.close()
+        self.connection = None
 
         print("[DISCONNECT] '{}' disconnected from '{}:{}'".format(
             self.username,
@@ -632,11 +643,6 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
-        for client in self.channels[sender.channel.name].clients:
-            if client != sender:
-                client.send_data("!msg", content)
-
-    def send_msg_to_specific_client(self, sender, receiver, content):
         for client in self.channels[sender.channel.name].clients:
             if client != sender:
                 client.send_data("!msg", content)
