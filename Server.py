@@ -182,11 +182,21 @@ class Database:
         if self.check_username_exists(username):
             return False
 
-        # Whatever value is passed to 'mute', when it's True, it's 1
-        mute = 1 if mute else 0
+        try:
+            self.c.execute("UPDATE users SET mute=? WHERE username =?", (1 if mute else 0, username))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            return False
+        else:
+            return True
+
+    def ban_user(self, username, ban):
+        if self.check_username_exists(username):
+            return False
 
         try:
-            self.c.execute("UPDATE users SET mute=? WHERE username =?", (mute, username))
+            self.c.execute("UPDATE users SET ban=? WHERE username =?", (1 if ban else 0, username))
             self.connection.commit()
         except Exception as ex:
             print(ex)
@@ -205,6 +215,9 @@ class Database:
     def list_permissions(self):
         rows = self.c.execute("SELECT * FROM permissions")
         return rows.fetchall()
+
+    def get_user_data(self, username):
+        return self.c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
 
 class Channel:
@@ -293,6 +306,8 @@ class Client:
             self.__cmd_channels()
         elif cmd == "!mute":
             self.__cmd_mute(content)
+        elif cmd == "!ban":
+            self.__cmd_ban(content)
         elif cmd == "!help":
             self.__help()
         else:
@@ -438,29 +453,67 @@ class Client:
         if not self.permission.mute:
             self.send_data("!error", "not enough permissions")
             return
-
-        for client in self.server.clients:
-            if target != client.username:
-                continue
-            elif client.permission.rank <= self.permission.rank:
-                self.send_data("!error", "the user has bigger or equal rank than you")
-                return
-
-            client.mute = not client.mute
-            self.server.database.mute_user(target, client.mute)
-
-            print("[MUTE] {} {} {}".format(
-                self.username,
-                "muted" if client.mute else "unmuted",
-                client.username
-            ))
-
-            self.send_data("!success", "user {} was {}".format(client.username, "muted" if client.mute else "unmuted"))
+        elif not target:
+            self.send_data("!error", "no target")
             return
 
-        self.send_data("!error", "no client by that username")
+        target_data = self.server.database.get_user_data(target)
 
-    
+        if not target_data:
+            self.send_data("!error", "no user by that username")
+            return
+
+        if target_data[4] <= self.permission.rank:
+            self.send_data("!error", "the user has bigger or equal rank than you")
+            return
+
+        was_muted = target_data[5]
+        self.server.database.mute_user(target, not was_muted)
+
+        print("[MUTE] {} {} {}".format(
+            self.username,
+            "unmuted" if was_muted else "muted",
+            target
+        ))
+
+        self.send_data("!success", "user {} was {}".format(target, "unmuted" if was_muted else "muted"))
+
+        for client in self.server.clients:
+            if target == client.username:
+                client.mute = True
+
+    def __cmd_ban(self, target):
+        if not self.permission.ban:
+            self.send_data("!error", "not enough permissions")
+            return
+        elif not target:
+            self.send_data("!error", "no target")
+            return
+
+        target_data = self.server.database.get_user_data(target)
+
+        if not target_data:
+            self.send_data("!error", "no user by that username")
+            return
+
+        if target_data[4] <= self.permission.rank:
+            self.send_data("!error", "the user has bigger or equal rank than you")
+            return
+
+        was_banned = target_data[6]
+        self.server.database.ban_user(target, not was_banned)
+
+        print("[BAN] {} {} {}".format(
+            self.username,
+            "unbanned" if was_banned else "banned",
+            target
+        ))
+
+        self.send_data("!success", "user {} was {}".format(target, "unbanned" if was_banned else "banned"))
+
+        for client in self.server.clients:
+            if target == client.username:
+                client.stop()
 
     # ======================================================================================================
     # Send data
