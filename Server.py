@@ -307,7 +307,7 @@ class Client:
         elif cmd == "!ban":
             self.__cmd_ban(content)
         elif cmd == "!help":
-            self.__help()
+            self.__cmd_help()
         else:
             self.send_data("!error", "unknown command")
 
@@ -390,22 +390,6 @@ class Client:
             self.address[1]
         ))
 
-    def __help(self):
-        help_string = """
-    Welcome, {user} to the {ip}:{port} server!
-    Here you'll find absolutely nothing!
-    User commands are:
-        * !help - shows this page
-        * !channels - lists all available channels and the users in them
-        * !channel <name> - join a channel
-    Admin commands are:
-        * !mute <username> - mutes or unmutes user (needs permissions)
-        * !kick <username> - disconnects a user (needs permissions)
-        * !ban <username> - bans or unbans user (needs permissions)
-        """.strip().format(user=self.username, ip=self.server.ip, port=self.server.port)
-
-        self.send_data("!help", help_string)
-
     # ======================================================================================================
     # After login or registration
     # ======================================================================================================
@@ -429,7 +413,7 @@ class Client:
 
         sleep(0.1)
 
-        self.__help()
+        self.__cmd_help()
 
     # ======================================================================================================
     # Commands
@@ -538,6 +522,22 @@ class Client:
 
         self.send_data("!error", "no user by that username")
         return
+
+    def __cmd_help(self):
+        help_string = """
+    Welcome, {user} to the {ip}:{port} server!
+    Here you'll find absolutely nothing!
+    User commands are:
+        * !help - shows this page
+        * !channels - lists all available channels and the users in them
+        * !channel <name> - join a channel
+    Admin commands are:
+        * !mute <username> - mutes or unmutes user (needs permissions)
+        * !kick <username> - disconnects a user (needs permissions)
+        * !ban <username> - bans or unbans user (needs permissions)
+        """.strip().format(user=self.username, ip=self.server.ip, port=self.server.port)
+
+        self.send_data("!help", help_string)
 
     # ======================================================================================================
     # Send data
