@@ -422,6 +422,9 @@ class Client:
         self.channel = self.server.channels["default"]
         self.channel.clients.append(self)
 
+        for msg in self.channel.chat_log:
+            self.send_data("!log", msg)
+
     def __load_permissions(self, user_rank):
         for rank, permission in self.server.permissions.items():
             if int(user_rank) <= int(rank):
@@ -702,7 +705,10 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
-        for client in self.channels[sender.channel.name].clients:
+        channel = self.channels[sender.channel.name]
+        channel.log(content)
+
+        for client in channel.clients:
             if client != sender:
                 client.send_data("!msg", content)
 

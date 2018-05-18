@@ -70,7 +70,7 @@ class Client:
             while True:
                 sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-
+                print(data)
                 data = data.split(" ", 1)
                 self.__parse_received_data(data[0], data[1])
 
@@ -84,6 +84,9 @@ class Client:
 
     def __parse_received_data(self, cmd, content):
         if cmd == "!box":
+            print(content)
+            return
+        if cmd == "!log":
             print(content)
             return
 
