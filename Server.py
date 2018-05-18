@@ -83,7 +83,7 @@ class Database:
         self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
 
     # ======================================================================================================
-    # User management
+    # Entry creation
     # ======================================================================================================
 
     def check_username_exists(self, username):
@@ -159,6 +159,7 @@ class Client:
         try:
             while True:
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+                print("[RAW - RECEIVE]", data)
                 self.__parse_data(data)
         except ConnectionResetError:
             pass
@@ -178,18 +179,24 @@ class Client:
             return
 
         if cmd == "!msg":
-            print("[MSG] '{0}' ({1}:{2}): '{3}'".format(
-                self.username,
-                self.address[0],
-                self.address[1],
-                content
-            ))
-            self.server.send_msg_from_client_to_all_in_channel(self, content)
+            self.__form_message(content)
+
         elif cmd == "!channels":
             self.__cmd_channels()
 
         if cmd != "!msg":
-            print("[RAW] '{0}' sent command '{1}' with data '{2}'".format(self.username, cmd, content))
+            print("[RAW - RECEIVE] '{0}' sent command '{1}' with data '{2}'".format(self.username, cmd, content))
+
+    def __form_message(self, msg):
+        print("[MSG] {0} ({1}) ({2}:{3}): '{4}'".format(
+            self.username,
+            self.nick,
+            self.address[0],
+            self.address[1],
+            msg
+        ))
+
+        self.server.send_msg_from_client_to_all_in_channel(self, msg)
 
     def __login(self, content):
         try:
@@ -271,6 +278,8 @@ class Client:
     def send_data(self, cmd, content):
         payload = cmd + " " + content
 
+        print("[RAW - SEND]", payload)
+
         try:
             self.connection.send(payload.encode("utf-8"))
         except ConnectionResetError:
@@ -299,8 +308,11 @@ class Client:
             self.address[1]
         ))
 
-        self.connection.close()
+        if self.connection:
+            self.connection.close()
+
         self.server.clients.remove(self)
+        self.channel.clients.remove(self)
 
     # ======================================================================================================
     # Utility functions

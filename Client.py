@@ -53,7 +53,7 @@ class Client:
         try:
             while True:
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                print("[RAW]", data)
+                print("[RAW - RECEIVE]", data)
 
                 data = data.split(" ", 1)
                 self.__parse_received_data(data[0], data[1])
@@ -77,7 +77,7 @@ class Client:
         if cmd == "!login":
             print("[LOGIN]", content)
             # TODO: remove
-            self.send_manual("!login 2 2")
+            self.send_data("!login 2 2")
         elif cmd == "!error":
             print("[ERROR]", content)
             return
@@ -104,7 +104,9 @@ class Client:
     # Send data
     # ======================================================================================================
 
-    def send_manual(self, data):
+    def send_data(self, data):
+        print("[RAW - SEND]", data)
+
         try:
             self.connection.sendall(data.encode("utf-8"))
         except ConnectionResetError:
@@ -133,16 +135,15 @@ class Client:
 
             if self.is_logged_in:
                 if data.startswith("!"):
-                    self.send_manual(data)
+                    self.send_data(data)
                 else:
-                    self.send_manual("!msg " + data)
-                    print("!msg " + data)
+                    self.send_data("!msg " + data)
                     print("!msg " + data)
             else:
                 if data.startswith("!login"):
-                    self.send_manual(data)
+                    self.send_data(data)
                 elif data.startswith("!register"):
-                    self.send_manual(data)
+                    self.send_data(data)
                 else:
                     print("[ERROR] Unknown command:", data)
         else:
