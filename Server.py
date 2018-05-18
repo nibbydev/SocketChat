@@ -179,11 +179,8 @@ class Database:
     # ======================================================================================================
 
     def mute_user(self, username, mute):
-        if self.check_username_exists(username):
-            return False
-
         try:
-            self.c.execute("UPDATE users SET mute=? WHERE username =?", (1 if mute else 0, username))
+            self.c.execute("UPDATE users SET mute=? WHERE username =?", (mute, username))
             self.connection.commit()
         except Exception as ex:
             print(ex)
@@ -192,11 +189,8 @@ class Database:
             return True
 
     def ban_user(self, username, ban):
-        if self.check_username_exists(username):
-            return False
-
         try:
-            self.c.execute("UPDATE users SET ban=? WHERE username =?", (1 if ban else 0, username))
+            self.c.execute("UPDATE users SET ban=? WHERE username =?", (ban, username))
             self.connection.commit()
         except Exception as ex:
             print(ex)
@@ -275,7 +269,7 @@ class Client:
     # ======================================================================================================
 
     def __loop_receive(self):
-        self.send_data("!login", "please send login info")
+        self.send_data("!login", "login with '!login <username> <password>' or register '!register <username> <password>'")
 
         try:
             while True:
@@ -284,6 +278,8 @@ class Client:
                 # print("[RAW - RECEIVE]", data)
                 self.__parse_data(data)
         except ConnectionResetError:
+            pass
+        except ConnectionAbortedError:
             pass
         finally:
             self.stop()
@@ -306,6 +302,8 @@ class Client:
             self.__cmd_channels()
         elif cmd == "!mute":
             self.__cmd_mute(content)
+        elif cmd == "!kick":
+            self.__cmd_kick(content)
         elif cmd == "!ban":
             self.__cmd_ban(content)
         elif cmd == "!help":
@@ -468,7 +466,7 @@ class Client:
             return
 
         was_muted = target_data[5]
-        self.server.database.mute_user(target, not was_muted)
+        self.server.database.mute_user(target, 1 - was_muted)
 
         print("[MUTE] {} {} {}".format(
             self.username,
@@ -480,6 +478,7 @@ class Client:
 
         for client in self.server.clients:
             if target == client.username:
+                client.send_data("!mute", "you have been muted")
                 client.mute = True
 
     def __cmd_ban(self, target):
@@ -501,7 +500,7 @@ class Client:
             return
 
         was_banned = target_data[6]
-        self.server.database.ban_user(target, not was_banned)
+        self.server.database.ban_user(target, 1 - was_banned)
 
         print("[BAN] {} {} {}".format(
             self.username,
@@ -513,7 +512,32 @@ class Client:
 
         for client in self.server.clients:
             if target == client.username:
+                client.send_data("!ban", "you have been banned")
                 client.stop()
+
+    def __cmd_kick(self, target):
+        if not self.permission.kick:
+            self.send_data("!error", "not enough permissions")
+            return
+        elif not target:
+            self.send_data("!error", "no target")
+            return
+
+        for client in self.server.clients:
+            if target == client.username:
+                if client.permission.rank <= self.permission.rank:
+                    self.send_data("!error", "the user has bigger or equal rank than you")
+                    return
+
+                print("[KICK] {} {} {}".format(self.username, "kicked", target))
+                self.send_data("!success", "user {} was kicked".format(target))
+                client.send_data("!kick", "you have been kicked")
+
+                client.stop()
+                return
+
+        self.send_data("!error", "no user by that username")
+        return
 
     # ======================================================================================================
     # Send data
@@ -545,18 +569,31 @@ class Client:
         self.thread.start()
 
     def stop(self):
+        if not self.connection:
+            return
+
+        self.connection.close()
+
         print("[DISCONNECT] '{}' disconnected from '{}:{}'".format(
             self.username,
             self.address[0],
             self.address[1]
         ))
 
-        if self.connection:
-            self.connection.close()
+        try:
+            self.server.clients.remove(self)
+        except ValueError:
+            pass
 
-        self.server.clients.remove(self)
-        self.channel.clients.remove(self)
-        self.permission.clients.remove(self)
+        try:
+            self.channel.clients.remove(self)
+        except ValueError:
+            pass
+
+        try:
+            self.permission.clients.remove(self)
+        except ValueError:
+            pass
 
 
 class Server:

@@ -5,8 +5,8 @@ import socket
 
 MAX_MSG_LENGTH = 2056
 
-DEV_USERNAME = "5"
-DEV_PASSWORD = "5"
+DEV_USERNAME = "2"
+DEV_PASSWORD = "2"
 
 
 class Client:
@@ -19,6 +19,8 @@ class Client:
 
         self.username = "myUsername"
         self.password = "myPassword"
+
+        self.__help()
 
     # ======================================================================================================
     # User commands
@@ -49,6 +51,18 @@ class Client:
         self.is_connected = False
         self.is_logged_in = False
 
+    def __help(self):
+        help_string = """
+    Welcome, to the chat application!
+    Generic commands are:
+        * !connect <ip> <port>
+    Once connected, you can use:
+        * !login <username> <password>
+        * !register <username> <password>
+        """.strip()
+
+        print(help_string)
+
     # ======================================================================================================
     # Receive and process messages
     # ======================================================================================================
@@ -67,6 +81,8 @@ class Client:
             print("Server unexpectedly closed")
         except ConnectionAbortedError:
             print("Connection closed")
+        finally:
+            self.disconnect()
 
     def __parse_received_data(self, cmd, content):
         if not self.is_logged_in:
@@ -85,8 +101,14 @@ class Client:
             print("[WELCOME]", content)
         elif cmd == "!help":
             print("[HELP]", content)
+        elif cmd == "!kick":
+            print("[KICK]", content)
+        elif cmd == "!ban":
+            print("[BAN]", content)
+        elif cmd == "!mute":
+            print("[MUTE]", content)
         else:
-            print("unknown command")
+            print("unknown server command: '{} {}'".format(cmd, content))
 
     def __process_login(self, cmd, content):
         if cmd == "!login":
