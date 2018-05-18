@@ -268,7 +268,7 @@ class Client:
             while True:
                 sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                print("[RAW - RECEIVE]", data)
+                # print("[RAW - RECEIVE]", data)
                 self.__parse_data(data)
         except ConnectionResetError:
             pass
@@ -293,6 +293,10 @@ class Client:
             self.__cmd_channels()
         elif cmd == "!mute":
             self.__cmd_mute(content)
+        elif cmd == "!help":
+            self.__help()
+        else:
+            self.send_data("!error", "unknown command")
 
     def __form_message(self, msg):
         if self.mute:
@@ -338,7 +342,7 @@ class Client:
 
         self.__join_default_channel()
         self.__load_permissions(user_data[4])
-        self.__welcome("logged in successfully")
+        self.__welcome()
 
         print("[LOGIN] '{0}' just logged in as client {1} from '{2}:{3}'".format(
             self.username,
@@ -364,7 +368,7 @@ class Client:
 
         self.__join_default_channel()
         self.__load_permissions("99")
-        self.__welcome("account created and logged in")
+        self.__welcome()
 
         print("[REGISTER] '{0}' just registered as client {1} from '{2}:{3}'".format(
             self.username,
@@ -372,6 +376,22 @@ class Client:
             self.address[0],
             self.address[1]
         ))
+
+    def __help(self):
+        help_string = """
+    Welcome, {user} to the {ip}:{port} server!
+    Here you'll find absolutely nothing!
+    User commands are:
+        * !help - shows this page
+        * !channels - lists all available channels and the users in them
+        * !channel <name> - join a channel
+    Admin commands are:
+        * !mute <username> - mutes or unmutes user (needs permissions)
+        * !kick <username> - disconnects a user (needs permissions)
+        * !ban <username> - bans or unbans user (needs permissions)
+        """.strip().format(user=self.username, ip=self.server.ip, port=self.server.port)
+
+        self.send_data("!help", help_string)
 
     # ======================================================================================================
     # After login or registration
@@ -389,18 +409,14 @@ class Client:
 
         self.permission.clients.append(self)
 
-    def __welcome(self, msg):
-        self.send_data("!success", msg)
-
-        sleep(0.1)
-
-        self.send_data("!welcome", "logged in as '{}' with rank '{}' in channel '{}'".format(
+    def __welcome(self):
+        self.send_data("!success", "logged in as '{}' with rank '{}' in channel '{}'".format(
             self.username, self.permission.name, self.channel.name
         ))
 
         sleep(0.1)
 
-        self.__cmd_channels()
+        self.__help()
 
     # ======================================================================================================
     # Commands
@@ -444,6 +460,8 @@ class Client:
 
         self.send_data("!error", "no client by that username")
 
+    
+
     # ======================================================================================================
     # Send data
     # ======================================================================================================
@@ -451,7 +469,7 @@ class Client:
     def send_data(self, cmd, content):
         payload = cmd + " " + content
 
-        print("[RAW - SEND]", payload)
+        # print("[RAW - SEND]", payload)
 
         try:
             self.connection.send(payload.encode("utf-8"))

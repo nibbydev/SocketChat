@@ -58,7 +58,7 @@ class Client:
             while True:
                 sleep(0.1)
                 data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                print("[RAW - RECEIVE]", data)
+                # print("[RAW - RECEIVE]", data)
 
                 data = data.split(" ", 1)
                 self.__parse_received_data(data[0], data[1])
@@ -81,6 +81,12 @@ class Client:
             print(content)
         elif cmd == "!channels":
             self.__parse_channels(content)
+        elif cmd == "!welcome":
+            print("[WELCOME]", content)
+        elif cmd == "!help":
+            print("[HELP]", content)
+        else:
+            print("unknown command")
 
     def __process_login(self, cmd, content):
         if cmd == "!login":
@@ -97,14 +103,12 @@ class Client:
 
     def __parse_channels(self, data):
         channels = data.split(",")
-        print("Channels and users in the server:")
+        print("[CHANNELS] Channels and users in the server:")
 
         for channel_data in channels:
             data = channel_data.split(":")
 
-            print(" *  {:12} {:>3}/{:<3} slots (rank <= {:2})".format(
-                data[0], data[1], data[2], data[3]
-            ))
+            print(" *  {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
 
             if data[4]:
                 for client in data[4].split(";"):
@@ -115,7 +119,7 @@ class Client:
     # ======================================================================================================
 
     def send_data(self, data):
-        print("[RAW - SEND]", data)
+        # print("[RAW - SEND]", data)
 
         try:
             self.connection.sendall(data.encode("utf-8"))
