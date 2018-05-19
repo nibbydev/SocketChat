@@ -2,12 +2,6 @@ from threading import Thread
 import socket
 
 
-MAX_MSG_LENGTH = 16
-
-DEV_USERNAME = "5"
-DEV_PASSWORD = "5"
-
-
 class Client:
     def __init__(self):
         self.connection = None
@@ -15,9 +9,6 @@ class Client:
 
         self.is_logged_in = False
         self.is_connected = False
-
-        self.username = "myUsername"
-        self.password = "myPassword"
 
         self.__help()
 
@@ -69,14 +60,14 @@ class Client:
             buffer = bytearray()
 
             while True:
-                buffer += self.connection.recv(MAX_MSG_LENGTH)
+                buffer += self.connection.recv(16)
 
                 length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
                 length_of_length = len(length_as_string) + 1
                 length = int(length_as_string) + length_of_length
 
                 while len(buffer) < length:
-                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+                    buffer += self.connection.recv(16)
 
                 data = buffer[length_of_length:length]
                 buffer = buffer[length:]
@@ -101,9 +92,6 @@ class Client:
                 print("[SUCCESS]", content)
                 self.is_logged_in = True
                 return
-
-            # TODO: remove this
-            # self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
 
         if cmd == "!error":
             print("[ERROR]", content)
@@ -176,9 +164,6 @@ class Client:
     # ======================================================================================================
 
     def run(self):
-        # TODO: remove
-        self.__parse_local_command("!connect localhost 8888")
-
         try:
             while True:
                 data = input()

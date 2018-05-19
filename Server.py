@@ -4,12 +4,10 @@ import sqlite3
 import socket
 
 
-MAX_MSG_LENGTH = 16
 CHANNEL_LOG_LENGTH = 32
 
-# These only have effect when the database is generated
-ROOT_USERNAME = "root"
-ROOT_PASSWORD = "123"
+# This only have effect when the database is generated
+ROOT_PASSWORD = "M83Kj5QGxWCh2YMG"
 
 
 class Database:
@@ -64,12 +62,7 @@ class Database:
         )
 
         data = [
-            (ROOT_USERNAME, ROOT_PASSWORD, 0),
-            ("1", "1", 99),
-            ("2", "2", 80),
-            ("3", "3", 99),
-            ("4", "4", 99),
-            ("5", "5", 4)
+            ("root", ROOT_PASSWORD, 0)
         ]
 
         self.c.executemany("INSERT INTO users(username,password,rank) VALUES (?,?,?)", data)
@@ -85,11 +78,9 @@ class Database:
 
         # Add default channels
         data = [
-            ("default", 512, 99),
-            ("off-topic", 128, 90),
-            ("music", 128, 20),
-            ("code club", 64, 20),
-            ("admin", 16, 10)
+            ("default",     512,    99),
+            ("off-topic",   128,    90),
+            ("admin",       16,     10)
         ]
 
         self.c.executemany("INSERT INTO channels(name,max,rank) VALUES (?,?,?)", data)
@@ -109,11 +100,11 @@ class Database:
 
         # Add default channels
         data = [
-            (0, "owner", 1, 1, 1, 1, 1),
-            (5, "admin", 1, 1, 1, 1, 1),
-            (10, "mod", 1, 1, 0, 1, 1),
-            (80, "member", 0, 0, 0, 0, 1),
-            (99, "default", 0, 0, 0, 0, 0)
+            (0,     "owner",    1, 1, 1, 1, 1),
+            (5,     "admin",    1, 1, 1, 1, 1),
+            (10,    "mod",      1, 1, 0, 1, 1),
+            (80,    "member",   0, 0, 0, 0, 1),
+            (99,    "default",  0, 0, 0, 0, 0)
         ]
 
         self.c.executemany("""INSERT INTO permissions(rank,name,mute,kick,ban,join_full,change_nick) 
@@ -303,7 +294,7 @@ class Permission:
 
         self.mute = True if data[3] == 1 else False
         self.kick = True if data[4] == 1 else False
-        self.ban = True if data[5] == 1 else False
+        self.ban =  True if data[5] == 1 else False
         self.join = True if data[6] == 1 else False
         self.nick = True if data[7] == 1 else False
 
@@ -350,14 +341,14 @@ class Client:
             buffer = bytearray()
 
             while True:
-                buffer += self.connection.recv(MAX_MSG_LENGTH)
+                buffer += self.connection.recv(16)
 
                 length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
                 length_of_length = len(length_as_string) + 1
                 length = int(length_as_string) + length_of_length
 
                 while len(buffer) < length:
-                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+                    buffer += self.connection.recv(16)
 
                 data = buffer[length_of_length:length]
                 buffer = buffer[length:]
