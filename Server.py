@@ -575,21 +575,6 @@ class Client:
 
         self.send_data("!channels", reply)
 
-    def __cmd_list_permissions(self):
-        if self.permission.rank > 5:
-            self.send_data("!error", "not enough permissions")
-            return
-
-        reply = ""
-
-        for permission in self.server.permissions:
-            reply += permission.to_csv() + ","
-
-        if reply.endswith(","):
-            reply = reply[:len(reply) - 1]
-
-        self.send_data("!permissions", reply)
-
     def __cmd_switch_channel(self, target):
         for channel in self.server.channels:
             if channel.name == target:
@@ -609,6 +594,54 @@ class Client:
                 return
 
         self.send_data("!error", "couldn't find channel '{}'".format(target))
+
+    def __load_channel_chat_log(self):
+        for msg in self.channel.chat_log:
+            self.send_data("!log", msg)
+
+    def __cmd_change_nick(self, new_name):
+        if not self.permission.nick:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if not Client.check_if_contains_only_alphanumeric(new_name):
+            self.send_data("!error", "illegal characters in nickname")
+            return
+
+        if len(new_name) > 16:
+            self.send_data("!error", "nickname too long")
+            return
+
+        new_name = None if new_name is "" else "*" + new_name
+
+        self.server.database.change_nick(self.username, new_name)
+        self.nick = new_name
+
+        if new_name is None:
+            print("[NICK] {} removed their nick".format(self.username))
+            self.send_data("!success", "nick removed")
+        else:
+            print("[NICK] {} changed nick to '{}'".format(self.username, new_name))
+            self.send_data("!success", "nick changed to '{}'".format(new_name))
+
+    # ----------------------------
+    # Admin commands
+    # ----------------------------
+
+    def __cmd_list_permissions(self):
+        if self.permission.rank > 5:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        reply = ""
+
+        for permission in self.server.permissions:
+            reply += permission.to_csv() + ","
+
+        if reply.endswith(","):
+            reply = reply[:len(reply) - 1]
+
+        self.send_data("!permissions", reply)
 
     def __cmd_mute(self, target):
         if not self.permission.mute:
@@ -701,35 +734,6 @@ class Client:
 
         self.send_data("!error", "no user by that username")
         return
-
-    def __load_channel_chat_log(self):
-        for msg in self.channel.chat_log:
-            self.send_data("!log", msg)
-
-    def __cmd_change_nick(self, new_name):
-        if not self.permission.nick:
-            self.send_data("!error", "not enough permissions")
-            return
-
-        if not Client.check_if_contains_only_alphanumeric(new_name):
-            self.send_data("!error", "illegal characters in nickname")
-            return
-
-        if len(new_name) > 16:
-            self.send_data("!error", "nickname too long")
-            return
-
-        new_name = None if new_name is "" else "*" + new_name
-
-        self.server.database.change_nick(self.username, new_name)
-        self.nick = new_name
-
-        if new_name is None:
-            print("[NICK] {} removed their nick".format(self.username))
-            self.send_data("!success", "nick removed")
-        else:
-            print("[NICK] {} changed nick to '{}'".format(self.username, new_name))
-            self.send_data("!success", "nick changed to '{}'".format(new_name))
 
     # ----------------------------
     # Help pages
