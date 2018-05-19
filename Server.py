@@ -404,6 +404,8 @@ class Client:
             self.__cmd_remove_channel(content)
         elif cmd == "!mk_permission":
             self.__cmd_create_permission(content)
+        elif cmd == "!mk_channel":
+            self.__cmd_create_channel(content)
         elif cmd == "!channel":
             self.__cmd_switch_channel(content)
         elif cmd == "!mute":
@@ -782,7 +784,7 @@ class Client:
         try:
             name = data.split(" ")[0]
             limit = int(data.split(" ")[1])
-            rank = int(data.split(" ")[1])
+            rank = int(data.split(" ")[2])
         except (ValueError, IndexError):
             self.send_data("!error", "invalid info provided")
             return
@@ -871,6 +873,7 @@ class Client:
 |   * !rm_channel <name> - delete channel     |
 |   * !rm_user <name> - delete user           | (It just won't fit)
 |   * !mk_permission <rank: 0-99> <name> <mute: 1/0> <kick: 1/0> <ban: 1/0> <full: 1/0> <nick: 1/0>
+|   * !mk_channel <name> <limit> <rank: 0-99> |
 ===============================================
         """.strip()
 
