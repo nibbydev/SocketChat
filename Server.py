@@ -257,7 +257,7 @@ class Channel:
     def to_csv(self):
         client_csv = ""
         for client in self.clients:
-            client_csv += "[{}] {}:".format(client.permission.name, client.username)
+            client_csv += "[{}] {};".format(client.permission.name, client.username)
 
         if client_csv.endswith(";"):
             client_csv = client_csv[:len(client_csv) - 1]
@@ -468,7 +468,11 @@ class Client:
     # ----------------------------
 
     def __join_default_channel(self):
-        self.channel = self.server.channels["default"]
+        for channel in self.server.channels:
+            if channel.name == "default":
+                self.channel = channel
+                break
+
         self.channel.clients.append(self)
 
     def __load_permissions(self, user_rank):
@@ -625,7 +629,7 @@ class Client:
             self.send_data("!error", "not enough permissions")
             return
 
-        new_name = None if new_name is "" else new_name + "*"
+        new_name = None if new_name is "" else "*" + new_name
 
         self.server.database.change_nick(self.username, new_name)
         self.nick = new_name
@@ -775,11 +779,10 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
-        channel = self.channels[sender.channel.name]
-        channel.log(content)
+        sender.channel.log(content)
 
-        for client in channel.clients:
-            if client != sender:
+        for client in sender.channel.clients:
+            if client is not sender:
                 client.send_data("!msg", content)
 
     # ======================================================================================================
