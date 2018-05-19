@@ -1061,7 +1061,7 @@ class Server:
 
 
 def init():
-    database = Database("test.db")
+    database = Database("data.db")
     server = Server(database, "localhost", 8888, 5)
 
     try:

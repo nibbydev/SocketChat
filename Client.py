@@ -17,8 +17,12 @@ class Client:
     # ======================================================================================================
 
     def __connect(self, data):
-        ip = data.split(" ")[1]
-        port = int(data.split(" ")[2])
+        try:
+            ip = data.split(" ")[1]
+            port = int(data.split(" ")[2])
+        except (IndexError, ValueError):
+            print("invalid address")
+            return
 
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connection.connect((ip, port))
