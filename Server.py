@@ -309,6 +309,18 @@ class Permission:
 
         self.clients = []
 
+    def to_csv(self):
+        return "{}:{}:{}:{}:{}:{}:{}:{}".format(
+            self.id,
+            self.rank,
+            self.name,
+            1 if self.mute else 0,
+            1 if self.kick else 0,
+            1 if self.ban else 0,
+            1 if self.join else 0,
+            1 if self.nick else 0
+        )
+
 
 class Client:
     def __init__(self, server, connection, address):
@@ -382,6 +394,8 @@ class Client:
             self.__form_message(content)
         elif cmd == "!channels":
             self.__cmd_list_channels()
+        elif cmd == "!permissions":
+            self.__cmd_list_permissions()
         elif cmd == "!channel":
             self.__cmd_switch_channel(content)
         elif cmd == "!mute":
@@ -561,6 +575,21 @@ class Client:
 
         self.send_data("!channels", reply)
 
+    def __cmd_list_permissions(self):
+        if self.permission.rank > 5:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        reply = ""
+
+        for permission in self.server.permissions:
+            reply += permission.to_csv() + ","
+
+        if reply.endswith(","):
+            reply = reply[:len(reply) - 1]
+
+        self.send_data("!permissions", reply)
+
     def __cmd_switch_channel(self, target):
         for channel in self.server.channels:
             if channel.name == target:
@@ -731,6 +760,7 @@ class Client:
 |   * !mute <username> - toggle mute   |
 |   * !kick <username> - kick user     |
 |   * !ban <username> - toggle ban     |
+|   * !permissions - list all ranks    |
 ========================================
         """.strip()
 

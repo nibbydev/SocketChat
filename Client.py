@@ -115,6 +115,8 @@ class Client:
             print(content)
         elif cmd == "!channels":
             self.__parse_channels(content)
+        elif cmd == "!permissions":
+            self.__parse_permissions(content)
         elif cmd == "!welcome":
             print("[WELCOME]", content)
         elif cmd == "!help":
@@ -129,10 +131,9 @@ class Client:
             print("unknown server command: '{} {}'".format(cmd, content))
 
     def __parse_channels(self, data):
-        channels = data.split(",")
         print("[CHANNELS] Channels and users in the server:")
 
-        for channel_data in channels:
+        for channel_data in data.split(","):
             data = channel_data.split(":")
 
             print(" |- {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
@@ -140,6 +141,20 @@ class Client:
             if data[4]:
                 for client in data[4].split(";"):
                     print(" |  {}".format(client))
+
+    def __parse_permissions(self, data):
+        print("[Permissions] Permissions in the server:")
+
+        print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+            "id", "rank", "name", "mute", "kick", "ban", "join full", "change nick"
+        ))
+
+        for perm_data in data.split(","):
+            data = perm_data.split(":")
+
+            print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]
+            ))
 
     # ======================================================================================================
     # Send data
