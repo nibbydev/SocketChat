@@ -582,8 +582,9 @@ class Client:
                     self.send_data("!error", "not enough permissions to join '{}'".format(target))
                     return
                 elif len(channel.clients) >= channel.max:
-                    self.send_data("!error", "channel '{}' is full".format(target))
-                    return
+                    if not self.permission.join:
+                        self.send_data("!error", "channel '{}' is full".format(target))
+                        return
 
                 self.channel.clients.remove(self)
                 self.channel = channel
