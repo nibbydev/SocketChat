@@ -106,7 +106,7 @@ class Client:
                 return
 
             # TODO: remove this
-            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
+            # self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
             return
 
         if cmd == "!error":
