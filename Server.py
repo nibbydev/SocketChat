@@ -363,6 +363,8 @@ class Client:
             self.__cmd_help_motd()
         elif cmd == "!help":
             self.__cmd_help_commands()
+        elif cmd == "!nick":
+            self.__cmd_change_nick(content)
         else:
             self.send_data("!error", "server got unknown command: '{} {}'".format(cmd, content))
 
@@ -371,15 +373,21 @@ class Client:
             self.send_data("!mute", "you are muted")
             return
 
-        print("[MSG][{}] {} ({}:{}): '{}'".format(
-            self.permission.name,
-            self.username,
-            self.address[0],
-            self.address[1],
-            msg
+        print("[{channel}][{rank}] {username} ({ip}:{port}): '{msg}'".format(
+            channel=self.channel.name,
+            rank=self.permission.name,
+            username=self.username,
+            ip=self.address[0],
+            port=self.address[1],
+            msg=msg
         ))
 
-        formatted_msg = "[{}][{}] {}: {}".format(self.channel.name, self.permission.name, self.username, msg)
+        formatted_msg = "[{channel}][{rank}] {username}: {msg}".format(
+            channel=self.channel.name,
+            rank=self.permission.name,
+            username=self.username if self.nick is None else self.nick,
+            msg=msg
+        )
 
         self.server.send_msg_from_client_to_all_in_channel(self, formatted_msg)
 
@@ -611,6 +619,23 @@ class Client:
     def __load_channel_chat_log(self):
         for msg in self.channel.chat_log:
             self.send_data("!log", msg)
+
+    def __cmd_change_nick(self, new_name):
+        if not self.permission.nick:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        new_name = None if new_name is "" else new_name + "*"
+
+        self.server.database.change_nick(self.username, new_name)
+        self.nick = new_name
+
+        if new_name is None:
+            print("[NICK] {} removed their nick".format(self.username))
+            self.send_data("!success", "nick removed")
+        else:
+            print("[NICK] {} changed nick to '{}'".format(self.username, new_name))
+            self.send_data("!success", "nick changed to '{}'".format(new_name))
 
     # ----------------------------
     # Help pages
