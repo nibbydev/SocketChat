@@ -1,4 +1,5 @@
 from threading import Thread
+from re import match
 import sqlite3
 import socket
 
@@ -403,6 +404,17 @@ class Client:
             self.send_data("!error", "invalid info provided")
             return
 
+        if not Client.check_if_contains_only_alphanumeric(username):
+            self.send_data("!error", "illegal characters in username")
+            return
+
+        if len(username) > 16:
+            self.send_data("!error", "username too long")
+            return
+        elif len(password) > 24:
+            self.send_data("!error", "password too long")
+            return
+
         user_data = self.server.database.check_login(username, password)
 
         if user_data is None:
@@ -436,6 +448,17 @@ class Client:
             password = content.split(" ")[1]
         except IndexError:
             self.send_data("!error", "invalid info provided")
+            return
+
+        if not Client.check_if_contains_only_alphanumeric(username):
+            self.send_data("!error", "illegal characters in username")
+            return
+
+        if len(username) > 16:
+            self.send_data("!error", "username too long")
+            return
+        elif len(password) > 24:
+            self.send_data("!error", "password too long")
             return
 
         if not self.server.database.create_user(username, password):
@@ -629,6 +652,14 @@ class Client:
             self.send_data("!error", "not enough permissions")
             return
 
+        if not Client.check_if_contains_only_alphanumeric(new_name):
+            self.send_data("!error", "illegal characters in nickname")
+            return
+
+        if len(new_name) > 16:
+            self.send_data("!error", "nickname too long")
+            return
+
         new_name = None if new_name is "" else "*" + new_name
 
         self.server.database.change_nick(self.username, new_name)
@@ -663,6 +694,9 @@ class Client:
 |   * !channels - lists all available  |
 |      channels and the users in them  |
 |   * !channel <name> - join a channel |
+| Restricted user commands are:        |
+|   * !nick <name> - change nickname   |
+|   * !nick - remove nickname          |
 | Admin commands are:                  |
 |   * !mute <username> - toggle mute   |
 |   * !kick <username> - kick user     |
@@ -742,6 +776,14 @@ class Client:
             self.permission.clients.remove(self)
         except (ValueError, AttributeError):
             pass
+
+    # ======================================================================================================
+    # Utility
+    # ======================================================================================================
+
+    @staticmethod
+    def check_if_contains_only_alphanumeric(string):
+        return match("^[\w_]+$", string) is not None
 
 
 class Server:
