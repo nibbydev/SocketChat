@@ -168,7 +168,7 @@ class Database:
     def create_rank(self, rank, name, mute, kick, ban, full, nick):
         try:
             self.c.execute("""INSERT INTO permissions(rank,name,mute,kick,ban,join_full,change_nick) 
-                                          VALUES (?,?,?,?,?,?,?)""", rank, name, mute, kick, ban, full, nick)
+                                          VALUES (?,?,?,?,?,?,?)""", (rank, name, mute, kick, ban, full, nick))
             self.connection.commit()
         except Exception as ex:
             print(ex)
@@ -832,7 +832,7 @@ class Client:
             return
 
         if self.server.database.create_rank(rank, name, mute, kick, ban, full, nick):
-            self.send_data("!success", "permission created")
+            self.send_data("!success", "permission created. applied after restart")
         else:
             self.send_data("!error", "couldn't create permission")
 
