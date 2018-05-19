@@ -4,8 +4,8 @@ import socket
 
 MAX_MSG_LENGTH = 16
 
-DEV_USERNAME = "5"
-DEV_PASSWORD = "5"
+DEV_USERNAME = "2"
+DEV_PASSWORD = "2"
 
 
 class Client:

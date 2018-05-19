@@ -431,9 +431,6 @@ class Client:
         self.channel = self.server.channels["default"]
         self.channel.clients.append(self)
 
-        for msg in self.channel.chat_log:
-            self.send_data("!log", msg)
-
     def __load_permissions(self, user_rank):
         for rank, permission in self.server.permissions.items():
             if int(user_rank) <= int(rank):
@@ -443,6 +440,8 @@ class Client:
         self.permission.clients.append(self)
 
     def __welcome(self):
+        self.__load_channel_chat_log()
+
         self.send_data("!success", "logged in as '{}' with rank '{}' in channel '{}'".format(
             self.username, self.permission.name, self.channel.name
         ))
@@ -475,13 +474,12 @@ class Client:
                     self.send_data("!error", "channel '{}' is full".format(target))
                     return
 
-                self.send_data("!success", "switched from channel '{}' to '{}'".format(
-                    self.channel.name, channel.name
-                ))
-
                 self.channel.clients.remove(self)
                 self.channel = channel
                 self.channel.clients.append(self)
+
+                self.__load_channel_chat_log()
+                self.send_data("!success", "switched to channel '{}'".format(self.channel.name))
                 return
 
         self.send_data("!error", "couldn't find channel '{}'".format(target))
@@ -577,6 +575,10 @@ class Client:
 
         self.send_data("!error", "no user by that username")
         return
+
+    def __load_channel_chat_log(self):
+        for msg in self.channel.chat_log:
+            self.send_data("!log", msg)
 
     # ----------------------------
     # Help pages
