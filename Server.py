@@ -396,6 +396,14 @@ class Client:
             self.__cmd_list_channels()
         elif cmd == "!permissions":
             self.__cmd_list_permissions()
+        elif cmd == "!rm_permission":
+            self.__cmd_remove_permission(content)
+        elif cmd == "!rm_user":
+            self.__cmd_remove_user(content)
+        elif cmd == "!rm_channel":
+            self.__cmd_remove_channel(content)
+        elif cmd == "!mk_permission":
+            self.__cmd_create_permission(content)
         elif cmd == "!channel":
             self.__cmd_switch_channel(content)
         elif cmd == "!mute":
@@ -736,6 +744,98 @@ class Client:
         self.send_data("!error", "no user by that username")
         return
 
+    def __cmd_remove_permission(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_rank(target):
+            self.send_data("!success", "rank '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove rank '{}'".format(target))
+
+    def __cmd_remove_user(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_user(target):
+            self.send_data("!success", "user '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove user '{}'".format(target))
+
+    def __cmd_remove_channel(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_channel(target):
+            self.send_data("!success", "channel '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove channel '{}'".format(target))
+
+    def __cmd_create_channel(self, data):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        try:
+            name = data.split(" ")[0]
+            limit = int(data.split(" ")[1])
+            rank = int(data.split(" ")[1])
+        except (ValueError, IndexError):
+            self.send_data("!error", "invalid info provided")
+            return
+
+        if self.server.database.create_channel(name, limit, rank):
+            reply = "channel '{}' (with {} slots for ranks {} or less) created. applied after restart".format(
+                name, limit, rank
+            )
+            self.send_data("!success", reply)
+        else:
+            reply = "couldn't create channel '{}' (with {} slots for ranks {} or less) created".format(
+                name, limit, rank
+            )
+            self.send_data("!error", reply)
+
+    def __cmd_create_permission(self, data):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        try:
+            rank = int(data.split(" ")[0])
+            name = data.split(" ")[1]
+            mute = int(data.split(" ")[2])
+            kick = int(data.split(" ")[3])
+            ban = int(data.split(" ")[4])
+            full = int(data.split(" ")[5])
+            nick = int(data.split(" ")[6])
+        except (ValueError, IndexError):
+            self.send_data("!error", "invalid info provided")
+            return
+
+        if mute != 0 and mute != 1:
+            self.send_data("!error", "invalid mute value provided")
+            return
+        elif kick != 0 and kick != 1:
+            self.send_data("!error", "invalid kick value provided")
+            return
+        elif ban != 0 and ban != 1:
+            self.send_data("!error", "invalid ban value provided")
+            return
+        elif full != 0 and full != 1:
+            self.send_data("!error", "invalid full value provided")
+            return
+        elif nick != 0 and nick != 1:
+            self.send_data("!error", "invalid nick value provided")
+            return
+
+        if self.server.database.create_rank(rank, name, mute, kick, ban, full, nick):
+            self.send_data("!success", "permission created")
+        else:
+            self.send_data("!error", "couldn't create permission")
+
     # ----------------------------
     # Help pages
     # ----------------------------
@@ -752,21 +852,26 @@ class Client:
 
     def __cmd_help_commands(self):
         help_string = """
-========================================
-| User commands are:                   |
-|   * !help - shows this page          |
-|   * !channels - lists all available  |
-|      channels and the users in them  |
-|   * !channel <name> - join a channel |
-| Restricted user commands are:        |
-|   * !nick <name> - change nickname   |
-|   * !nick - remove nickname          |
-| Admin commands are:                  |
-|   * !mute <username> - toggle mute   |
-|   * !kick <username> - kick user     |
-|   * !ban <username> - toggle ban     |
-|   * !permissions - list all ranks    |
-========================================
+===============================================
+| User commands are:                          |
+|   * !help - shows this page                 |
+|   * !channels - lists all available         |
+|      channels and the users in them         |
+|   * !channel <name> - join a channel        |
+| Restricted user commands are:               |
+|   * !nick <name> - change nickname          |
+|   * !nick - remove nickname                 |
+| Admin commands are:                         |
+|   * !mute <username> - toggle mute          |
+|   * !kick <username> - kick user            |
+|   * !ban <username> - toggle ban            |
+|   * !permissions - list all ranks           |
+| Owner commands are:                         |
+|   * !rm_permission <name> delete permission |
+|   * !rm_channel <name> - delete channel     |
+|   * !rm_user <name> - delete user           | (It just won't fit)
+|   * !mk_permission <rank: 0-99> <name> <mute: 1/0> <kick: 1/0> <ban: 1/0> <full: 1/0> <nick: 1/0>
+===============================================
         """.strip()
 
         self.send_data("!box", help_string)
