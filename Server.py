@@ -310,7 +310,6 @@ class Client:
 
     def __loop_receive(self):
         self.__cmd_help_login()
-        self.send_data("!login", "")
 
         try:
             buffer = bytearray()
@@ -333,6 +332,14 @@ class Client:
             pass
         except ConnectionAbortedError:
             pass
+        except UnicodeDecodeError:
+            print("[KICK] disconnected '{}' ({}:{}) for sending invalid data".format(
+                self.username,
+                self.address[0],
+                self.address[1]
+            ))
+
+            self.send_data("!kick", "you have been kicked")
         finally:
             self.stop()
 
