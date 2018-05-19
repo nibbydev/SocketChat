@@ -1,9 +1,8 @@
 from threading import Thread
-from time import sleep
 import socket
 
 
-MAX_MSG_LENGTH = 4096
+MAX_MSG_LENGTH = 16
 
 DEV_USERNAME = "5"
 DEV_PASSWORD = "5"
@@ -67,13 +66,23 @@ class Client:
 
     def __loop_receive(self):
         try:
-            while True:
-                sleep(0.1)
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                print(data)
-                data = data.split(" ", 1)
-                self.__parse_received_data(data[0], data[1])
+            buffer = bytearray()
 
+            while True:
+                buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
+                length_of_length = len(length_as_string) + 1
+                length = int(length_as_string) + length_of_length
+
+                while len(buffer) < length:
+                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                data = buffer[length_of_length:length]
+                buffer = buffer[length:]
+
+                data = data.decode("utf-8").split(" ", 1)
+                self.__parse_received_data(data[0], data[1])
         except ConnectionResetError:
             print("Server unexpectedly closed")
         except ConnectionAbortedError:
@@ -86,9 +95,6 @@ class Client:
         if cmd == "!box":
             print(content)
             return
-        if cmd == "!log":
-            print(content)
-            return
 
         if not self.is_logged_in:
             if cmd == "!success":
@@ -97,17 +103,20 @@ class Client:
                 return
 
             # TODO: remove this
-            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
-            return
+            # self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
 
         if cmd == "!error":
             print("[ERROR]", content)
         elif cmd == "!success":
             print("[SUCCESS]", content)
+        elif cmd == "!log":
+            print(content)
         elif cmd == "!msg":
             print(content)
         elif cmd == "!channels":
             self.__parse_channels(content)
+        elif cmd == "!permissions":
+            self.__parse_permissions(content)
         elif cmd == "!welcome":
             print("[WELCOME]", content)
         elif cmd == "!help":
@@ -122,27 +131,43 @@ class Client:
             print("unknown server command: '{} {}'".format(cmd, content))
 
     def __parse_channels(self, data):
-        channels = data.split(",")
         print("[CHANNELS] Channels and users in the server:")
 
-        for channel_data in channels:
+        for channel_data in data.split(","):
             data = channel_data.split(":")
 
-            print(" * {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
+            print(" |- {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
 
             if data[4]:
                 for client in data[4].split(";"):
-                    print("      * {}".format(client))
+                    print(" |  {}".format(client))
+
+    def __parse_permissions(self, data):
+        print("[Permissions] Permissions in the server:")
+
+        print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+            "id", "rank", "name", "mute", "kick", "ban", "join full", "change nick"
+        ))
+
+        for perm_data in data.split(","):
+            data = perm_data.split(":")
+
+            print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]
+            ))
 
     # ======================================================================================================
     # Send data
     # ======================================================================================================
 
     def send_data(self, data):
-        # print("[RAW - SEND]", data)
+        encoded = bytearray(data.encode("utf-8"))
+        length_of_encoded = len(encoded)
+        prefix = str(length_of_encoded) + " "
+        encoded[0:0] = prefix.encode("utf-8")
 
         try:
-            self.connection.sendall(data.encode("utf-8"))
+            self.connection.sendall(encoded)
         except ConnectionResetError:
             pass
 
@@ -156,7 +181,6 @@ class Client:
 
         try:
             while True:
-                sleep(0.1)
                 data = input()
                 self.__parse_local_command(data)
         except KeyboardInterrupt:

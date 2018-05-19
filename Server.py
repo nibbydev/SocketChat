@@ -1,10 +1,10 @@
 from threading import Thread
-from time import sleep
+from re import match
 import sqlite3
 import socket
 
 
-MAX_MSG_LENGTH = 4096
+MAX_MSG_LENGTH = 16
 CHANNEL_LOG_LENGTH = 32
 
 # These only have effect when the database is generated
@@ -55,7 +55,7 @@ class Database:
         self.c.execute(
             """CREATE TABLE users (
                     id INTEGER PRIMARY KEY, 
-                    username TEXT UNIQUE, 
+                    username TEXT UNIQUE NOT NULL, 
                     nick TEXT DEFAULT NULL, 
                     password TEXT NOT NULL, 
                     rank INT DEFAULT 99, 
@@ -71,10 +71,17 @@ class Database:
             ("4", "4", 99),
             ("5", "5", 4)
         ]
+
         self.c.executemany("INSERT INTO users(username,password,rank) VALUES (?,?,?)", data)
 
     def __create_table_channels(self):
-        self.c.execute("CREATE TABLE channels (name TEXT, max INT, rank INT)")
+        self.c.execute(
+            """CREATE TABLE channels (
+                    id INTEGER PRIMARY KEY, 
+                    name TEXT UNIQUE NOT NULL, 
+                    max INT DEFAULT 64, 
+                    rank INT DEFAULT 99)"""
+        )
 
         # Add default channels
         data = [
@@ -85,10 +92,20 @@ class Database:
             ("admin", 16, 10)
         ]
 
-        self.c.executemany("INSERT INTO channels VALUES (?,?,?)", data)
+        self.c.executemany("INSERT INTO channels(name,max,rank) VALUES (?,?,?)", data)
 
     def __create_table_permissions(self):
-        self.c.execute("CREATE TABLE permissions (rank INT, name TEXT, mute INT, kick INT, ban INT, join_full INT, change_nick INT)")
+        self.c.execute(
+            """CREATE TABLE permissions (
+                    id INTEGER PRIMARY KEY, 
+                    rank INT NOT NULL,
+                    name TEXT UNIQUE NOT NULL, 
+                    mute INT DEFAULT 0, 
+                    kick INT DEFAULT 0, 
+                    ban INT DEFAULT 0, 
+                    join_full INT DEFAULT 0, 
+                    change_nick INT DEFAULT 0)"""
+        )
 
         # Add default channels
         data = [
@@ -99,7 +116,8 @@ class Database:
             (99, "default", 0, 0, 0, 0, 0)
         ]
 
-        self.c.executemany("INSERT INTO permissions VALUES (?,?,?,?,?,?,?)", data)
+        self.c.executemany("""INSERT INTO permissions(rank,name,mute,kick,ban,join_full,change_nick) 
+                              VALUES (?,?,?,?,?,?,?)""", data)
 
     # ======================================================================================================
     # Entry checking
@@ -126,29 +144,35 @@ class Database:
     # ======================================================================================================
 
     def create_user(self, username, password):
-        if self.check_username_exists(username):
-            return False
-
         try:
-            data = ("today", username, username, password, 99, 0, 0)
-            self.c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)", data)
+            self.c.execute("INSERT INTO users(username,password) VALUES (?,?)", (username, password))
             self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
 
     def create_channel(self, name, user_limit, rank):
-        if self.check_channel_exists(name):
-            return False
-
         try:
-            data = (name, user_limit, rank)
-            self.c.execute("INSERT INTO users VALUES (?,?,?)", data)
+            self.c.execute("INSERT INTO channels(name,max,rank) VALUES (?,?,?)", (name, user_limit, rank))
             self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
+            return False
+        else:
+            return True
+
+    def create_rank(self, rank, name, mute, kick, ban, full, nick):
+        try:
+            self.c.execute("""INSERT INTO permissions(rank,name,mute,kick,ban,join_full,change_nick) 
+                                          VALUES (?,?,?,?,?,?,?)""", (rank, name, mute, kick, ban, full, nick))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
@@ -160,8 +184,10 @@ class Database:
     def remove_channel(self, channel):
         try:
             self.c.execute("DELETE FROM channels WHERE name=?", (channel,))
+            self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
@@ -169,8 +195,21 @@ class Database:
     def remove_user(self, user):
         try:
             self.c.execute("DELETE FROM users WHERE username=?", (user,))
+            self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
+            return False
+        else:
+            return True
+
+    def remove_rank(self, name):
+        try:
+            self.c.execute("DELETE FROM permissions WHERE name=?", (name,))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
@@ -185,6 +224,7 @@ class Database:
             self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
@@ -195,6 +235,18 @@ class Database:
             self.connection.commit()
         except Exception as ex:
             print(ex)
+            self.connection.rollback()
+            return False
+        else:
+            return True
+
+    def change_nick(self, username, new_name):
+        try:
+            self.c.execute("UPDATE users SET nick=? WHERE username =?", (new_name, username))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            self.connection.rollback()
             return False
         else:
             return True
@@ -204,12 +256,13 @@ class Database:
     # ======================================================================================================
 
     def list_channels(self):
-        rows = self.c.execute("SELECT * FROM channels")
-        return rows.fetchall()
+        return self.c.execute("SELECT * FROM channels").fetchall()
 
     def list_permissions(self):
-        rows = self.c.execute("SELECT * FROM permissions")
-        return rows.fetchall()
+        return self.c.execute("SELECT * FROM permissions").fetchall()
+
+    def list_users(self):
+        return self.c.execute("SELECT * FROM users").fetchall()
 
     def get_user_data(self, username):
         return self.c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
@@ -217,9 +270,10 @@ class Database:
 
 class Channel:
     def __init__(self, data):
-        self.name = data[0]
-        self.max = int(data[1])
-        self.rank = int(data[2])
+        self.id = data[0]
+        self.name = data[1]
+        self.max = data[2]
+        self.rank = data[3]
 
         self.clients = []
         self.chat_log = []
@@ -227,7 +281,7 @@ class Channel:
     def to_csv(self):
         client_csv = ""
         for client in self.clients:
-            client_csv += "[{}] {}:".format(client.permission.name, client.username)
+            client_csv += "[{}] {};".format(client.permission.name, client.username)
 
         if client_csv.endswith(";"):
             client_csv = client_csv[:len(client_csv) - 1]
@@ -243,16 +297,29 @@ class Channel:
 
 class Permission:
     def __init__(self, data):
-        self.rank = int(data[0])
-        self.name = data[1]
+        self.id = data[0]
+        self.rank = data[1]
+        self.name = data[2]
 
-        self.mute = True if data[2] == 1 else False
-        self.kick = True if data[3] == 1 else False
-        self.ban = True if data[4] == 1 else False
-        self.join = True if data[5] == 1 else False
-        self.nick = True if data[6] == 1 else False
+        self.mute = True if data[3] == 1 else False
+        self.kick = True if data[4] == 1 else False
+        self.ban = True if data[5] == 1 else False
+        self.join = True if data[6] == 1 else False
+        self.nick = True if data[7] == 1 else False
 
         self.clients = []
+
+    def to_csv(self):
+        return "{}:{}:{}:{}:{}:{}:{}:{}".format(
+            self.id,
+            self.rank,
+            self.name,
+            1 if self.mute else 0,
+            1 if self.kick else 0,
+            1 if self.ban else 0,
+            1 if self.join else 0,
+            1 if self.nick else 0
+        )
 
 
 class Client:
@@ -278,19 +345,36 @@ class Client:
 
     def __loop_receive(self):
         self.__cmd_help_login()
-        sleep(0.1)
-        self.send_data("!login", "")
 
         try:
+            buffer = bytearray()
+
             while True:
-                sleep(0.1)
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                # print("[RAW - RECEIVE]", data)
-                self.__parse_data(data)
+                buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
+                length_of_length = len(length_as_string) + 1
+                length = int(length_as_string) + length_of_length
+
+                while len(buffer) < length:
+                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                data = buffer[length_of_length:length]
+                buffer = buffer[length:]
+
+                self.__parse_data(data.decode("utf-8"))
         except ConnectionResetError:
             pass
         except ConnectionAbortedError:
             pass
+        except UnicodeDecodeError:
+            print("[KICK] disconnected '{}' ({}:{}) for sending invalid data".format(
+                self.username,
+                self.address[0],
+                self.address[1]
+            ))
+
+            self.send_data("!kick", "you have been kicked")
         finally:
             self.stop()
 
@@ -310,6 +394,18 @@ class Client:
             self.__form_message(content)
         elif cmd == "!channels":
             self.__cmd_list_channels()
+        elif cmd == "!permissions":
+            self.__cmd_list_permissions()
+        elif cmd == "!rm_permission":
+            self.__cmd_remove_permission(content)
+        elif cmd == "!rm_user":
+            self.__cmd_remove_user(content)
+        elif cmd == "!rm_channel":
+            self.__cmd_remove_channel(content)
+        elif cmd == "!mk_permission":
+            self.__cmd_create_permission(content)
+        elif cmd == "!mk_channel":
+            self.__cmd_create_channel(content)
         elif cmd == "!channel":
             self.__cmd_switch_channel(content)
         elif cmd == "!mute":
@@ -322,6 +418,8 @@ class Client:
             self.__cmd_help_motd()
         elif cmd == "!help":
             self.__cmd_help_commands()
+        elif cmd == "!nick":
+            self.__cmd_change_nick(content)
         else:
             self.send_data("!error", "server got unknown command: '{} {}'".format(cmd, content))
 
@@ -330,15 +428,21 @@ class Client:
             self.send_data("!mute", "you are muted")
             return
 
-        print("[MSG][{}] {} ({}:{}): '{}'".format(
-            self.permission.name,
-            self.username,
-            self.address[0],
-            self.address[1],
-            msg
+        print("[{channel}][{rank}] {username} ({ip}:{port}): '{msg}'".format(
+            channel=self.channel.name,
+            rank=self.permission.name,
+            username=self.username,
+            ip=self.address[0],
+            port=self.address[1],
+            msg=msg
         ))
 
-        formatted_msg = "[{}][{}] {}: {}".format(self.channel.name, self.permission.name, self.username, msg)
+        formatted_msg = "[{channel}][{rank}] {username}: {msg}".format(
+            channel=self.channel.name,
+            rank=self.permission.name,
+            username=self.username if self.nick is None else self.nick,
+            msg=msg
+        )
 
         self.server.send_msg_from_client_to_all_in_channel(self, formatted_msg)
 
@@ -352,6 +456,17 @@ class Client:
             password = content.split(" ")[1]
         except IndexError:
             self.send_data("!error", "invalid info provided")
+            return
+
+        if not Client.check_if_contains_only_alphanumeric(username):
+            self.send_data("!error", "illegal characters in username")
+            return
+
+        if len(username) > 16:
+            self.send_data("!error", "username too long")
+            return
+        elif len(password) > 24:
+            self.send_data("!error", "password too long")
             return
 
         user_data = self.server.database.check_login(username, password)
@@ -389,6 +504,17 @@ class Client:
             self.send_data("!error", "invalid info provided")
             return
 
+        if not Client.check_if_contains_only_alphanumeric(username):
+            self.send_data("!error", "illegal characters in username")
+            return
+
+        if len(username) > 16:
+            self.send_data("!error", "username too long")
+            return
+        elif len(password) > 24:
+            self.send_data("!error", "password too long")
+            return
+
         if not self.server.database.create_user(username, password):
             self.send_data("!error", "username already in use")
             return
@@ -397,7 +523,7 @@ class Client:
         self.username = username
 
         self.__join_default_channel()
-        self.__load_permissions("99")
+        self.__load_permissions(99)
         self.__welcome()
 
         print("[REGISTER] '{0}' just registered as client {1} from '{2}:{3}'".format(
@@ -419,26 +545,27 @@ class Client:
     # ----------------------------
 
     def __join_default_channel(self):
-        self.channel = self.server.channels["default"]
+        for channel in self.server.channels:
+            if channel.name == "default":
+                self.channel = channel
+                break
+
         self.channel.clients.append(self)
 
-        for msg in self.channel.chat_log:
-            self.send_data("!log", msg)
-
     def __load_permissions(self, user_rank):
-        for rank, permission in self.server.permissions.items():
-            if int(user_rank) <= int(rank):
+        for permission in self.server.permissions:
+            if user_rank <= permission.rank:
                 self.permission = permission
                 break
 
         self.permission.clients.append(self)
 
     def __welcome(self):
+        self.__load_channel_chat_log()
+
         self.send_data("!success", "logged in as '{}' with rank '{}' in channel '{}'".format(
             self.username, self.permission.name, self.channel.name
         ))
-
-        sleep(0.1)
 
         self.__cmd_help_motd()
 
@@ -449,7 +576,7 @@ class Client:
     def __cmd_list_channels(self):
         reply = ""
 
-        for name, channel in self.server.channels.items():
+        for channel in self.server.channels:
             if channel.rank >= self.permission.rank:
                 reply += channel.to_csv() + ","
 
@@ -459,25 +586,73 @@ class Client:
         self.send_data("!channels", reply)
 
     def __cmd_switch_channel(self, target):
-        for name, channel in self.server.channels.items():
-            if name == target:
+        for channel in self.server.channels:
+            if channel.name == target:
                 if channel.rank < self.permission.rank:
                     self.send_data("!error", "not enough permissions to join '{}'".format(target))
                     return
                 elif len(channel.clients) >= channel.max:
-                    self.send_data("!error", "channel '{}' is full".format(target))
-                    return
-
-                self.send_data("!success", "switched from channel '{}' to '{}'".format(
-                    self.channel.name, channel.name
-                ))
+                    if not self.permission.join:
+                        self.send_data("!error", "channel '{}' is full".format(target))
+                        return
 
                 self.channel.clients.remove(self)
                 self.channel = channel
                 self.channel.clients.append(self)
+
+                self.__load_channel_chat_log()
+                self.send_data("!success", "switched to channel '{}'".format(self.channel.name))
                 return
 
         self.send_data("!error", "couldn't find channel '{}'".format(target))
+
+    def __load_channel_chat_log(self):
+        for msg in self.channel.chat_log:
+            self.send_data("!log", msg)
+
+    def __cmd_change_nick(self, new_name):
+        if not self.permission.nick:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if not Client.check_if_contains_only_alphanumeric(new_name):
+            self.send_data("!error", "illegal characters in nickname")
+            return
+
+        if len(new_name) > 16:
+            self.send_data("!error", "nickname too long")
+            return
+
+        new_name = None if new_name is "" else "*" + new_name
+
+        self.server.database.change_nick(self.username, new_name)
+        self.nick = new_name
+
+        if new_name is None:
+            print("[NICK] {} removed their nick".format(self.username))
+            self.send_data("!success", "nick removed")
+        else:
+            print("[NICK] {} changed nick to '{}'".format(self.username, new_name))
+            self.send_data("!success", "nick changed to '{}'".format(new_name))
+
+    # ----------------------------
+    # Admin commands
+    # ----------------------------
+
+    def __cmd_list_permissions(self):
+        if self.permission.rank > 5:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        reply = ""
+
+        for permission in self.server.permissions:
+            reply += permission.to_csv() + ","
+
+        if reply.endswith(","):
+            reply = reply[:len(reply) - 1]
+
+        self.send_data("!permissions", reply)
 
     def __cmd_mute(self, target):
         if not self.permission.mute:
@@ -571,6 +746,98 @@ class Client:
         self.send_data("!error", "no user by that username")
         return
 
+    def __cmd_remove_permission(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_rank(target):
+            self.send_data("!success", "rank '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove rank '{}'".format(target))
+
+    def __cmd_remove_user(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_user(target):
+            self.send_data("!success", "user '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove user '{}'".format(target))
+
+    def __cmd_remove_channel(self, target):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        if self.server.database.remove_channel(target):
+            self.send_data("!success", "channel '{}' removed. applied after restart".format(target))
+        else:
+            self.send_data("!error", "couldn't remove channel '{}'".format(target))
+
+    def __cmd_create_channel(self, data):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        try:
+            name = data.split(" ")[0]
+            limit = int(data.split(" ")[1])
+            rank = int(data.split(" ")[2])
+        except (ValueError, IndexError):
+            self.send_data("!error", "invalid info provided")
+            return
+
+        if self.server.database.create_channel(name, limit, rank):
+            reply = "channel '{}' (with {} slots for ranks {} or less) created. applied after restart".format(
+                name, limit, rank
+            )
+            self.send_data("!success", reply)
+        else:
+            reply = "couldn't create channel '{}' (with {} slots for ranks {} or less) created".format(
+                name, limit, rank
+            )
+            self.send_data("!error", reply)
+
+    def __cmd_create_permission(self, data):
+        if self.permission.rank > 0:
+            self.send_data("!error", "not enough permissions")
+            return
+
+        try:
+            rank = int(data.split(" ")[0])
+            name = data.split(" ")[1]
+            mute = int(data.split(" ")[2])
+            kick = int(data.split(" ")[3])
+            ban = int(data.split(" ")[4])
+            full = int(data.split(" ")[5])
+            nick = int(data.split(" ")[6])
+        except (ValueError, IndexError):
+            self.send_data("!error", "invalid info provided")
+            return
+
+        if mute != 0 and mute != 1:
+            self.send_data("!error", "invalid mute value provided")
+            return
+        elif kick != 0 and kick != 1:
+            self.send_data("!error", "invalid kick value provided")
+            return
+        elif ban != 0 and ban != 1:
+            self.send_data("!error", "invalid ban value provided")
+            return
+        elif full != 0 and full != 1:
+            self.send_data("!error", "invalid full value provided")
+            return
+        elif nick != 0 and nick != 1:
+            self.send_data("!error", "invalid nick value provided")
+            return
+
+        if self.server.database.create_rank(rank, name, mute, kick, ban, full, nick):
+            self.send_data("!success", "permission created. applied after restart")
+        else:
+            self.send_data("!error", "couldn't create permission")
+
     # ----------------------------
     # Help pages
     # ----------------------------
@@ -587,17 +854,27 @@ class Client:
 
     def __cmd_help_commands(self):
         help_string = """
-========================================
-| User commands are:                   |
-|   * !help - shows this page          |
-|   * !channels - lists all available  |
-|      channels and the users in them  |
-|   * !channel <name> - join a channel |
-| Admin commands are:                  |
-|   * !mute <username> - toggle mute   |
-|   * !kick <username> - kick user     |
-|   * !ban <username> - toggle ban     |
-========================================
+===============================================
+| User commands are:                          |
+|   * !help - shows this page                 |
+|   * !channels - lists all available         |
+|      channels and the users in them         |
+|   * !channel <name> - join a channel        |
+| Restricted user commands are:               |
+|   * !nick <name> - change nickname          |
+|   * !nick - remove nickname                 |
+| Admin commands are:                         |
+|   * !mute <username> - toggle mute          |
+|   * !kick <username> - kick user            |
+|   * !ban <username> - toggle ban            |
+|   * !permissions - list all ranks           |
+| Owner commands are:                         |
+|   * !rm_permission <name> delete permission |
+|   * !rm_channel <name> - delete channel     |
+|   * !rm_user <name> - delete user           | (It just won't fit)
+|   * !mk_permission <rank: 0-99> <name> <mute: 1/0> <kick: 1/0> <ban: 1/0> <full: 1/0> <nick: 1/0>
+|   * !mk_channel <name> <limit> <rank: 0-99> |
+===============================================
         """.strip()
 
         self.send_data("!box", help_string)
@@ -620,8 +897,13 @@ class Client:
     def send_data(self, cmd, content):
         payload = cmd + " " + content
 
+        encoded = bytearray(payload.encode("utf-8"))
+        length_of_encoded = len(encoded)
+        prefix = str(length_of_encoded) + " "
+        encoded[0:0] = prefix.encode("utf-8")
+
         try:
-            self.connection.send(payload.encode("utf-8"))
+            self.connection.send(encoded)
         except ConnectionResetError:
             pass
 
@@ -668,6 +950,14 @@ class Client:
         except (ValueError, AttributeError):
             pass
 
+    # ======================================================================================================
+    # Utility
+    # ======================================================================================================
+
+    @staticmethod
+    def check_if_contains_only_alphanumeric(string):
+        return match("^[\w_]+$", string) is not None
+
 
 class Server:
     def __init__(self, database, ip, port, max_clients):
@@ -675,8 +965,8 @@ class Server:
         self.port = port
         self.max_clients = max_clients
         self.clients = []
-        self.channels = {}
-        self.permissions = {}
+        self.channels = []
+        self.permissions = []
 
         self.database = database
         self.connection = None
@@ -687,7 +977,6 @@ class Server:
 
     def __loop_receive(self):
         while True:
-            sleep(0.1)
             connection, address = self.connection.accept()
             client = Client(self, connection, address)
 
@@ -705,11 +994,10 @@ class Server:
                 client.send_data(cmd, content)
 
     def send_msg_from_client_to_all_in_channel(self, sender, content):
-        channel = self.channels[sender.channel.name]
-        channel.log(content)
+        sender.channel.log(content)
 
-        for client in channel.clients:
-            if client != sender:
+        for client in sender.channel.clients:
+            if client is not sender:
                 client.send_data("!msg", content)
 
     # ======================================================================================================
@@ -718,30 +1006,39 @@ class Server:
 
     def __load_channels(self):
         print("Loaded channels:")
-        print("|   {:>12} | {:>5} | {:>4} |".format(
-            "name", "slots", "rank"
-        ))
+        print("| {:>2} | {:>12} | {:>5} | {:>4} |".format("id", "name", "slots", "rank"))
 
         for data in self.database.list_channels():
-            print("|   {:>12} | {:>5} | {:>4} |".format(
-                data[0], data[1], data[2]
-            ))
-            self.channels[data[0]] = Channel(data)
+            print("| {:>2} | {:>12} | {:>5} | {:>4} |".format(data[0], data[1], data[2], data[3]))
+            self.channels.append(Channel(data))
 
         print()
 
     def __load_permissions(self):
         print("Loaded permissions:")
-        print("|   {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
-            "rank", "name", "mute", "kick", "ban", "join full", "change nick"
+        print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+            "id", "rank", "name", "mute", "kick", "ban", "join full", "change nick"
         ))
 
         for data in self.database.list_permissions():
-            print("|   {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
-                data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            print("| {:>2} | {:>4} | {:>12} | {:>4} | {:>4} | {:>3} | {:>9} | {:>11} |".format(
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]
             ))
 
-            self.permissions[data[0]] = Permission(data)
+            self.permissions.append(Permission(data))
+
+        print()
+
+    def __list_users(self):
+        print("Listing users:")
+        print("| {:>2} | {:>16} | {:>16} | {:>16} | {:>4} | {:>5} | {:>6} |".format(
+            "id", "username", "nick", "password", "rank", "muted", "banned"
+        ))
+
+        for data in self.database.list_users():
+            print("| {:>2} | {:>16} | {:>16} | {:>16} | {:>4} | {:>5} | {:>6} |".format(
+                data[0], data[1], str(data[2]), data[3], data[4], data[5], data[6]
+            ))
 
         print()
 
@@ -752,6 +1049,7 @@ class Server:
     def run(self):
         self.__load_channels()
         self.__load_permissions()
+        self.__list_users()
 
         print("Starting server on '{0}:{1}'".format(self.ip, self.port))
 
