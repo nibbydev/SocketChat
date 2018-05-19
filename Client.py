@@ -4,8 +4,8 @@ import socket
 
 MAX_MSG_LENGTH = 16
 
-DEV_USERNAME = "2"
-DEV_PASSWORD = "2"
+DEV_USERNAME = "5"
+DEV_PASSWORD = "5"
 
 
 class Client:
@@ -95,9 +95,6 @@ class Client:
         if cmd == "!box":
             print(content)
             return
-        if cmd == "!log":
-            print(content)
-            return
 
         if not self.is_logged_in:
             if cmd == "!success":
@@ -107,12 +104,13 @@ class Client:
 
             # TODO: remove this
             # self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
-            return
 
         if cmd == "!error":
             print("[ERROR]", content)
         elif cmd == "!success":
             print("[SUCCESS]", content)
+        elif cmd == "!log":
+            print(content)
         elif cmd == "!msg":
             print(content)
         elif cmd == "!channels":
