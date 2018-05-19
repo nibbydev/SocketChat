@@ -1,139 +1,193 @@
-import tkinter as tk
-from tkinter import Text, Button, Entry, Scrollbar
 from threading import Thread
+from time import sleep
 import socket
 
 
-MAX_MSG_LENGTH = 2056
+MAX_MSG_LENGTH = 4096
+
+DEV_USERNAME = "5"
+DEV_PASSWORD = "5"
 
 
-class MainWindow(tk.Frame):
-    def __init__(self, parent, *args, **kwargs):
-        tk.Frame.__init__(self, parent, *args, **kwargs)
-        self.root = parent
+class Client:
+    def __init__(self):
+        self.connection = None
+        self.receive_thread = None
 
-        self.__build_gui()
+        self.is_logged_in = False
+        self.is_connected = False
+
+        self.username = "myUsername"
+        self.password = "myPassword"
+
+        self.__help()
+
+    # ======================================================================================================
+    # User commands
+    # ======================================================================================================
+
+    def __connect(self, data):
+        ip = data.split(" ")[1]
+        port = int(data.split(" ")[2])
+
+        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection.connect((ip, port))
+
+        self.receive_thread = Thread(target=self.__loop_receive, daemon=True)
+        self.receive_thread.start()
+
+        self.is_connected = True
+
+    def disconnect(self):
+        if not self.is_connected:
+            print("No active connections")
+            return
+
+        self.connection.close()
 
         self.connection = None
         self.receive_thread = None
 
-        self.greeted = False
+        self.is_connected = False
+        self.is_logged_in = False
 
-        self.log("Top windows shows messages, bottom window sends messages")
-        self.log("Press enter to send your message")
+    def __help(self):
+        help_string = """
+==================================
+| Usable commands are:           |
+|     * !connect <ip> <port>     |
+==================================
+        """.strip()
 
-    def __build_gui(self):
-        self.root.title("Text Chat")
-        self.root.option_add('*tearOff', 'FALSE')
+        print(help_string)
 
-        connection_frame = tk.Frame(master=self.root)
-        connection_frame.pack(side=tk.LEFT, padx=10, pady=10)
-
-        base_frame = tk.Frame(master=self.root)
-        base_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-        text_frame = tk.Frame(master=base_frame)
-        text_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        tk.Label(connection_frame, text='IP and port of server').pack()
-        self.ip = Entry(connection_frame, width=20)
-        self.ip.insert(tk.END, "localhost:8888")
-        self.ip.pack()
-
-        Button(connection_frame, text='Connect', command=self.cmd_connect).pack(pady=5)
-        Button(connection_frame, text='Disconnect', command=self.cmd_disconnect).pack()
-
-        self.console = Text(text_frame, height=10)
-        self.console.pack(fill=tk.BOTH, expand=True)
-
-        scrollbar = Scrollbar(base_frame, command=self.console.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.console["yscrollcommand"] = scrollbar.set
-
-        self.textbox = Text(text_frame, height=3)
-        self.textbox.pack(fill=tk.BOTH, expand=True)
-
-        self.textbox.bind("<Return>", self.cmd_send)
+    # ======================================================================================================
+    # Receive and process messages
+    # ======================================================================================================
 
     def __loop_receive(self):
         try:
             while True:
-                msg = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+                sleep(0.1)
+                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
+                print(data)
+                data = data.split(" ", 1)
+                self.__parse_received_data(data[0], data[1])
 
-                if not self.greeted:
-                    self.greeted = True
-                    if msg == "welcome":
-                        self.log("Connected to server")
-                        continue
-                    elif msg == "full":
-                        self.log("Server is full")
-                        self.cmd_disconnect()
-                        return
-
-                self.log(msg)
         except ConnectionResetError:
-            self.log("Server unexpectedly closed")
+            print("Server unexpectedly closed")
         except ConnectionAbortedError:
-            self.log("Connection closed")
+            print("Connection closed")
+        finally:
+            self.disconnect()
+            self.__help()
 
-    def exit(self):
-        self.connection.close()
-
-        self.destroy()
-        self.root.destroy()
-
-    def cmd_send(self, event):
-        msg = self.textbox.get("1.0", "end").strip()
-        self.textbox.delete("1.0", "end")
-
-        if self.connection:
-            self.log("Me> " + msg)
-            self.connection.sendall(msg.encode("utf-8"))
-        else:
-            self.log("No active connections")
-
-    def cmd_connect(self):
-        if self.receive_thread is not None or self.connection is not None:
-            self.log("A connection is already active")
+    def __parse_received_data(self, cmd, content):
+        if cmd == "!box":
+            print(content)
             return
+        if cmd == "!log":
+            print(content)
+            return
+
+        if not self.is_logged_in:
+            if cmd == "!success":
+                print("[SUCCESS]", content)
+                self.is_logged_in = True
+                return
+
+            # TODO: remove this
+            self.send_data("!login " + DEV_USERNAME + " " + DEV_PASSWORD)
+            return
+
+        if cmd == "!error":
+            print("[ERROR]", content)
+        elif cmd == "!success":
+            print("[SUCCESS]", content)
+        elif cmd == "!msg":
+            print(content)
+        elif cmd == "!channels":
+            self.__parse_channels(content)
+        elif cmd == "!welcome":
+            print("[WELCOME]", content)
+        elif cmd == "!help":
+            print("[HELP]", content)
+        elif cmd == "!kick":
+            print("[KICK]", content)
+        elif cmd == "!ban":
+            print("[BAN]", content)
+        elif cmd == "!mute":
+            print("[MUTE]", content)
+        else:
+            print("unknown server command: '{} {}'".format(cmd, content))
+
+    def __parse_channels(self, data):
+        channels = data.split(",")
+        print("[CHANNELS] Channels and users in the server:")
+
+        for channel_data in channels:
+            data = channel_data.split(":")
+
+            print(" * {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
+
+            if data[4]:
+                for client in data[4].split(";"):
+                    print("      * {}".format(client))
+
+    # ======================================================================================================
+    # Send data
+    # ======================================================================================================
+
+    def send_data(self, data):
+        # print("[RAW - SEND]", data)
 
         try:
-            ip = self.ip.get().split(":")[0]
-            port = int(self.ip.get().split(":")[1])
-        except (ValueError, IndexError):
-            self.log("Invalid IP")
-            return
+            self.connection.sendall(data.encode("utf-8"))
+        except ConnectionResetError:
+            pass
 
-        self.greeted = False
+    # ======================================================================================================
+    # Command loop
+    # ======================================================================================================
 
-        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connection.connect((ip, port))
-        self.receive_thread = Thread(target=self.__loop_receive, daemon=True)
-        self.receive_thread.start()
+    def run(self):
+        # TODO: remove
+        self.__parse_local_command("!connect localhost 8888")
 
-    def cmd_disconnect(self):
-        if not self.receive_thread or not self.receive_thread.is_alive():
-            self.log("No active connections")
-            return
+        try:
+            while True:
+                sleep(0.1)
+                data = input()
+                self.__parse_local_command(data)
+        except KeyboardInterrupt:
+            self.disconnect()
 
-        self.connection.close()
+    def __parse_local_command(self, data):
+        if self.is_connected:
+            if data.startswith("!disconnect"):
+                self.disconnect()
+                return
 
-        self.connection = None
-        self.receive_thread = None
-
-    def log(self, msg):
-        self.console.insert(self.console.index('end'), msg + "\n")
-        self.console.see(tk.END)
+            if self.is_logged_in:
+                if data.startswith("!"):
+                    self.send_data(data)
+                else:
+                    self.send_data("!msg " + data)
+            else:
+                if data.startswith("!login"):
+                    self.send_data(data)
+                elif data.startswith("!register"):
+                    self.send_data(data)
+                else:
+                    print("[ERROR] Unknown command:", data)
+        else:
+            if data.startswith("!connect"):
+                self.__connect(data)
 
 
 def init():
-    root = tk.Tk()
-    MainWindow(root)
-
-    try:
-        root.mainloop()
-    except KeyboardInterrupt:
-        return
+    client = Client()
+    client.run()
 
 
 if __name__ == "__main__":
