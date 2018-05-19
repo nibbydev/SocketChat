@@ -137,11 +137,11 @@ class Client:
         for channel_data in channels:
             data = channel_data.split(":")
 
-            print(" * {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
+            print(" |- {:12} {:>3}/{:<3} slots (rank <= {:2})".format(data[0], data[1], data[2], data[3]))
 
             if data[4]:
                 for client in data[4].split(";"):
-                    print("      * {}".format(client))
+                    print(" |  {}".format(client))
 
     # ======================================================================================================
     # Send data
