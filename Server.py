@@ -99,7 +99,7 @@ class Database:
             """CREATE TABLE permissions (
                     id INTEGER PRIMARY KEY, 
                     rank INT NOT NULL,
-                    name TEXT NOT NULL, 
+                    name TEXT UNIQUE NOT NULL, 
                     mute INT DEFAULT 0, 
                     kick INT DEFAULT 0, 
                     ban INT DEFAULT 0, 
@@ -156,7 +156,19 @@ class Database:
 
     def create_channel(self, name, user_limit, rank):
         try:
-            self.c.execute("INSERT INTO channels VALUES (?,?,?)", (name, user_limit, rank))
+            self.c.execute("INSERT INTO channels(name,max,rank) VALUES (?,?,?)", (name, user_limit, rank))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            self.connection.rollback()
+            return False
+        else:
+            return True
+
+    def create_rank(self, rank, name, mute, kick, ban, full, nick):
+        try:
+            self.c.execute("""INSERT INTO permissions(rank,name,mute,kick,ban,join_full,change_nick) 
+                                          VALUES (?,?,?,?,?,?,?)""", rank, name, mute, kick, ban, full, nick)
             self.connection.commit()
         except Exception as ex:
             print(ex)
@@ -183,6 +195,17 @@ class Database:
     def remove_user(self, user):
         try:
             self.c.execute("DELETE FROM users WHERE username=?", (user,))
+            self.connection.commit()
+        except Exception as ex:
+            print(ex)
+            self.connection.rollback()
+            return False
+        else:
+            return True
+
+    def remove_rank(self, name):
+        try:
+            self.c.execute("DELETE FROM permissions WHERE name=?", (name,))
             self.connection.commit()
         except Exception as ex:
             print(ex)
