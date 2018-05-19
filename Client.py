@@ -1,9 +1,8 @@
 from threading import Thread
-from time import sleep
 import socket
 
 
-MAX_MSG_LENGTH = 4096
+MAX_MSG_LENGTH = 16
 
 DEV_USERNAME = "5"
 DEV_PASSWORD = "5"
@@ -67,13 +66,23 @@ class Client:
 
     def __loop_receive(self):
         try:
-            while True:
-                sleep(0.1)
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                print(data)
-                data = data.split(" ", 1)
-                self.__parse_received_data(data[0], data[1])
+            buffer = bytearray()
 
+            while True:
+                buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
+                length_of_length = len(length_as_string) + 1
+                length = int(length_as_string) + length_of_length
+
+                while len(buffer) < length:
+                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                data = buffer[length_of_length:length]
+                buffer = buffer[length:]
+
+                data = data.decode("utf-8").split(" ", 1)
+                self.__parse_received_data(data[0], data[1])
         except ConnectionResetError:
             print("Server unexpectedly closed")
         except ConnectionAbortedError:
@@ -139,10 +148,13 @@ class Client:
     # ======================================================================================================
 
     def send_data(self, data):
-        # print("[RAW - SEND]", data)
+        encoded = bytearray(data.encode("utf-8"))
+        length_of_encoded = len(encoded)
+        prefix = str(length_of_encoded) + " "
+        encoded[0:0] = prefix.encode("utf-8")
 
         try:
-            self.connection.sendall(data.encode("utf-8"))
+            self.connection.sendall(encoded)
         except ConnectionResetError:
             pass
 
@@ -156,7 +168,6 @@ class Client:
 
         try:
             while True:
-                sleep(0.1)
                 data = input()
                 self.__parse_local_command(data)
         except KeyboardInterrupt:

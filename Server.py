@@ -1,10 +1,9 @@
 from threading import Thread
-from time import sleep
 import sqlite3
 import socket
 
 
-MAX_MSG_LENGTH = 4096
+MAX_MSG_LENGTH = 16
 CHANNEL_LOG_LENGTH = 32
 
 # These only have effect when the database is generated
@@ -278,15 +277,25 @@ class Client:
 
     def __loop_receive(self):
         self.__cmd_help_login()
-        sleep(0.1)
         self.send_data("!login", "")
 
         try:
+            buffer = bytearray()
+
             while True:
-                sleep(0.1)
-                data = self.connection.recv(MAX_MSG_LENGTH).decode("utf-8")
-                # print("[RAW - RECEIVE]", data)
-                self.__parse_data(data)
+                buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                length_as_string = buffer.decode("utf-8").split(" ", 1)[0]
+                length_of_length = len(length_as_string) + 1
+                length = int(length_as_string) + length_of_length
+
+                while len(buffer) < length:
+                    buffer += self.connection.recv(MAX_MSG_LENGTH)
+
+                data = buffer[length_of_length:length]
+                buffer = buffer[length:]
+
+                self.__parse_data(data.decode("utf-8"))
         except ConnectionResetError:
             pass
         except ConnectionAbortedError:
@@ -437,8 +446,6 @@ class Client:
         self.send_data("!success", "logged in as '{}' with rank '{}' in channel '{}'".format(
             self.username, self.permission.name, self.channel.name
         ))
-
-        sleep(0.1)
 
         self.__cmd_help_motd()
 
@@ -620,8 +627,13 @@ class Client:
     def send_data(self, cmd, content):
         payload = cmd + " " + content
 
+        encoded = bytearray(payload.encode("utf-8"))
+        length_of_encoded = len(encoded)
+        prefix = str(length_of_encoded) + " "
+        encoded[0:0] = prefix.encode("utf-8")
+
         try:
-            self.connection.send(payload.encode("utf-8"))
+            self.connection.send(encoded)
         except ConnectionResetError:
             pass
 
@@ -687,7 +699,6 @@ class Server:
 
     def __loop_receive(self):
         while True:
-            sleep(0.1)
             connection, address = self.connection.accept()
             client = Client(self, connection, address)
 
